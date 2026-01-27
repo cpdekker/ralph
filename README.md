@@ -2,6 +2,25 @@
 
 An AI agent framework that uses Claude Code to iteratively implement features from specifications. Ralph runs in a loop, picking up tasks from your implementation plan and building them out—one iteration at a time.
 
+## Table of Contents
+
+- [How It Works](#how-it-works)
+- [Quick Start](#quick-start)
+- [NPM Integration](#npm-integration)
+- [Modes](#modes)
+  - [Plan Mode](#plan-mode)
+  - [Build Mode](#build-mode)
+- [File Structure](#file-structure)
+- [Branch Strategy](#branch-strategy)
+- [Active Spec Pattern](#active-spec-pattern)
+- [Customization](#customization)
+- [Requirements](#requirements)
+- [Tips](#tips)
+- [Troubleshooting](#troubleshooting)
+- [References](#references)
+
+---
+
 ## How It Works
 
 ```
@@ -269,6 +288,19 @@ Create the spec at `.ralph/specs/{spec-name}.md`
 
 ### Docker image not building
 Ensure Docker is running and you have permissions. Try: `docker build -t ralph-wiggum -f .ralph/Dockerfile .`
+
+### "bad interpreter" or script errors in Docker (Windows)
+If you see errors like `/bin/bash^M: bad interpreter`, the shell scripts have Windows (CRLF) line endings. Fix with:
+```bash
+# Re-normalize line endings after cloning
+git add --renormalize .
+git commit -m "Normalize line endings"
+```
+Or manually convert the files:
+```bash
+# Using Git Bash or WSL
+sed -i 's/\r$//' .ralph/*.sh
+```
 
 ---
 

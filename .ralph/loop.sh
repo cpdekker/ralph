@@ -90,11 +90,190 @@ if [ ! -f "$PROMPT_FILE" ]; then
     exit 1
 fi
 
+# ASCII art digits for turn display
+print_turn_banner() {
+    local num=$1
+    
+    # Define each digit as an array of lines (8 lines tall)
+    local d0=(
+        "  ██████  "
+        " ██    ██ "
+        " ██    ██ "
+        " ██    ██ "
+        " ██    ██ "
+        " ██    ██ "
+        "  ██████  "
+        "          "
+    )
+    local d1=(
+        "    ██    "
+        "   ███    "
+        "    ██    "
+        "    ██    "
+        "    ██    "
+        "    ██    "
+        "  ██████  "
+        "          "
+    )
+    local d2=(
+        "  ██████  "
+        " ██    ██ "
+        "       ██ "
+        "   █████  "
+        "  ██      "
+        " ██       "
+        " ████████ "
+        "          "
+    )
+    local d3=(
+        "  ██████  "
+        " ██    ██ "
+        "       ██ "
+        "   █████  "
+        "       ██ "
+        " ██    ██ "
+        "  ██████  "
+        "          "
+    )
+    local d4=(
+        " ██    ██ "
+        " ██    ██ "
+        " ██    ██ "
+        " ████████ "
+        "       ██ "
+        "       ██ "
+        "       ██ "
+        "          "
+    )
+    local d5=(
+        " ████████ "
+        " ██       "
+        " ██       "
+        " ███████  "
+        "       ██ "
+        " ██    ██ "
+        "  ██████  "
+        "          "
+    )
+    local d6=(
+        "  ██████  "
+        " ██       "
+        " ██       "
+        " ███████  "
+        " ██    ██ "
+        " ██    ██ "
+        "  ██████  "
+        "          "
+    )
+    local d7=(
+        " ████████ "
+        "       ██ "
+        "      ██  "
+        "     ██   "
+        "    ██    "
+        "    ██    "
+        "    ██    "
+        "          "
+    )
+    local d8=(
+        "  ██████  "
+        " ██    ██ "
+        " ██    ██ "
+        "  ██████  "
+        " ██    ██ "
+        " ██    ██ "
+        "  ██████  "
+        "          "
+    )
+    local d9=(
+        "  ██████  "
+        " ██    ██ "
+        " ██    ██ "
+        "  ███████ "
+        "       ██ "
+        "       ██ "
+        "  ██████  "
+        "          "
+    )
+
+    # TURN text (8 lines tall)
+    local turn=(
+        " ████████ ██    ██ ██████  ███    ██ "
+        "    ██    ██    ██ ██   ██ ████   ██ "
+        "    ██    ██    ██ ██   ██ ██ ██  ██ "
+        "    ██    ██    ██ ██████  ██  ██ ██ "
+        "    ██    ██    ██ ██   ██ ██   ████ "
+        "    ██    ██    ██ ██   ██ ██    ███ "
+        "    ██     ██████  ██   ██ ██     ██ "
+        "                                     "
+    )
+
+    # Colon (8 lines tall)
+    local colon=(
+        "    "
+        " ██ "
+        " ██ "
+        "    "
+        " ██ "
+        " ██ "
+        "    "
+        "    "
+    )
+
+    # Get digits of the number
+    local digits=()
+    local temp_num=$num
+    if [ $temp_num -eq 0 ]; then
+        digits=(0)
+    else
+        while [ $temp_num -gt 0 ]; do
+            digits=($((temp_num % 10)) "${digits[@]}")
+            temp_num=$((temp_num / 10))
+        done
+    fi
+
+    echo ""
+    echo ""
+    echo -e "\033[1;33m" # Bold yellow
+
+    # Print each line
+    for line in 0 1 2 3 4 5 6 7; do
+        local output="${turn[$line]}${colon[$line]}"
+        
+        # Add each digit
+        for digit in "${digits[@]}"; do
+            case $digit in
+                0) output+="${d0[$line]}" ;;
+                1) output+="${d1[$line]}" ;;
+                2) output+="${d2[$line]}" ;;
+                3) output+="${d3[$line]}" ;;
+                4) output+="${d4[$line]}" ;;
+                5) output+="${d5[$line]}" ;;
+                6) output+="${d6[$line]}" ;;
+                7) output+="${d7[$line]}" ;;
+                8) output+="${d8[$line]}" ;;
+                9) output+="${d9[$line]}" ;;
+            esac
+        done
+        
+        echo "    $output"
+    done
+
+    echo -e "\033[0m" # Reset color
+    echo ""
+    echo ""
+}
+
 while true; do
-    if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -ge $MAX_ITERATIONS ]; then
+    ITERATION=$((ITERATION + 1))
+    
+    if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -gt $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
         break
     fi
+
+    # Display turn banner
+    print_turn_banner $ITERATION
 
     # Run Ralph iteration with selected prompt
     # -p: Headless mode (non-interactive, reads from stdin)
@@ -114,7 +293,10 @@ while true; do
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-
-    ITERATION=$((ITERATION + 1))
-    echo -e "\n\n======================== LOOP $ITERATION ========================\n"
 done
+
+echo ""
+echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+echo -e "\033[1;32m  Ralph completed $ITERATION iteration(s)\033[0m"
+echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+echo ""

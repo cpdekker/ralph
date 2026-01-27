@@ -6,6 +6,18 @@ const readline = require('readline');
 
 const rootDir = path.resolve(__dirname, '..');
 
+// Convert Windows paths to Docker-compatible format
+// Docker on Windows needs forward slashes and drive letters like /c/ instead of C:\
+function toDockerPath(windowsPath) {
+  if (process.platform !== 'win32') {
+    return windowsPath;
+  }
+  // Convert C:\Users\... to /c/Users/...
+  return windowsPath
+    .replace(/\\/g, '/')
+    .replace(/^([A-Za-z]):/, (_, letter) => `/${letter.toLowerCase()}`);
+}
+
 function getAvailableSpecs() {
   const specsDir = path.join(rootDir, '.ralph', 'specs');
   if (!fs.existsSync(specsDir)) return [];
@@ -56,6 +68,9 @@ function runRalph(spec, mode, iterations) {
   checkDockerImage();
   checkEnvFile();
 
+  // Convert rootDir to Docker-compatible path for volume mount
+  const dockerRootDir = toDockerPath(rootDir);
+
   const dockerArgs = [
     'run',
     '-it',
@@ -63,7 +78,7 @@ function runRalph(spec, mode, iterations) {
     '--env-file',
     '.ralph/.env',
     '-v',
-    `${rootDir}:/workspace`,
+    `${dockerRootDir}:/workspace`,
     '-w',
     '/workspace',
     'ralph-wiggum',

@@ -1,0 +1,24 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Shell scripts must use LF line endings (for Docker/Linux)
+*.sh text eol=lf
+
+# Dockerfile must use LF
+Dockerfile text eol=lf
+
+# Keep these as LF for consistency in Docker environment
+.ralph/*.sh text eol=lf
+.ralph/entrypoint.sh text eol=lf
+.ralph/loop.sh text eol=lf
+
+# Node.js files can be auto-detected
+*.js text
+*.json text
+
+# Markdown files
+*.md text
+
+# Keep Windows batch files as CRLF (if any are added)
+*.bat text eol=crlf
+*.cmd text eol=crlf
