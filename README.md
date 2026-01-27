@@ -2,11 +2,16 @@
 
 An AI agent framework that uses Claude Code to iteratively implement features from specifications. Ralph runs in a loop, picking up tasks from your implementation plan and building them out—one iteration at a time.
 
+**Why use Ralph?** Instead of manually prompting an AI for each change, Ralph autonomously works through a prioritized task list, running tests, committing code, and pushing changes. You define *what* to build; Ralph figures out *how* and executes it.
+
 ## Table of Contents
 
 - [How It Works](#how-it-works)
 - [Quick Start](#quick-start)
-- [NPM Integration](#npm-integration)
+- [Usage](#usage)
+  - [Interactive Mode](#interactive-mode)
+  - [Command Line](#command-line)
+  - [NPM Scripts](#npm-scripts)
 - [Modes](#modes)
   - [Plan Mode](#plan-mode)
   - [Build Mode](#build-mode)
@@ -48,11 +53,13 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+---
+
 ## Quick Start
 
 ### 1. Copy `.ralph` into your project
 
-Copy the `.ralph` directory to the root of your repository.
+Copy the `.ralph` directory and `.gitattributes` file to the root of your repository.
 
 ### 2. Configure environment
 
@@ -61,63 +68,116 @@ cp .ralph/.env.example .ralph/.env
 ```
 
 Edit `.ralph/.env` and add:
+
 ```env
 AWS_BEARER_TOKEN_BEDROCK=...
 
 GIT_USER=your-github-username
 GIT_TOKEN=ghp_your_personal_access_token
 ```
-You can generate the Bedrock token in [AWS Bedrock](https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/api-keys?tab=short-term)
 
-The GIT_TOKEN can be created as a personal access token [here](https://github.com/settings/tokens). Ensure the token only has access to the repository you are adding ralph to and has the most limited permissions possible.
+| Variable | Where to get it |
+|----------|-----------------|
+| `AWS_BEARER_TOKEN_BEDROCK` | [AWS Bedrock Console](https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/api-keys?tab=short-term) |
+| `GIT_TOKEN` | [GitHub Personal Access Tokens](https://github.com/settings/tokens) — use minimal permissions, repo-scoped |
 
 ### 3. Customize AGENTS.md
 
 Update `.ralph/AGENTS.md` with your project's build commands, test commands, and critical patterns.
 
+<details>
+<summary>💡 Sample prompt to generate AGENTS.md</summary>
+
+> Analyze this codebase and create a `.ralph/AGENTS.md` file. Include:
+> 1. **Build & Validate** - Commands to build, test, and lint the project
+> 2. **Critical Rules** - Important patterns, conventions, or gotchas specific to this codebase
+> 3. **Project Structure** - Brief overview of where key code lives
+> 4. **Key Patterns** - Architecture patterns used (e.g., repository pattern, dependency injection)
+> 5. **Git** - Any specific git workflows or branch naming conventions
+>
+> Keep it brief and operational—this file is loaded into every AI iteration's context.
+
+</details>
+
 ### 4. Create your spec
 
-Using `.ralph/prompts/requirements.md` as a sample, work with your AI agent to create an initial spec. Save it to `.ralph/specs/my-feature.md`. This is the most important step as the generated spec will be used by all the subsequent steps.
+Work with your AI agent to create a detailed specification. Save it to `.ralph/specs/my-feature.md`.
+A sample prompt template to work off of is defined in `.ralph/prompts/requirements.md`
 
-### 5. Build Ralph Image
+### 5. Build the Docker image
 
 ```bash
 node .ralph/docker-build.js
-# or, if you have the npm script set up
-npm run ralph:docker
 ```
 
-### 6. Run Ralph Plan
+### 6. Run Ralph
 
 ```bash
-# Plan mode - creates/refines implementation plan (5 iterations)
-node .ralph/run.js my-feature plan
-# or
-npm run ralph -- my-feature plan
+# Interactive mode - prompts for spec and mode
+node .ralph/run.js
+
+# Or specify directly
+node .ralph/run.js my-feature plan   # Plan first
+node .ralph/run.js my-feature build  # Then build
 ```
 
-This process has Ralph iterate on the initial plan and spec you put together. It explores the codebase, does gap analysis and solidifies the plan you had started. After this process is complete, review the spec and implementation plan files.
+> ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `IMPLEMENTATION_PLAN.md`. Ensure you agree with every line—these drive the build phase.
 
-**IMPORTANT**: Ensure you sign off on each line of these files. They will be used to create the implementation in the next step, so it's important that you know what you are signing off on.
-
-### 7. Run Ralph Build
-
-```bash
-# Build mode - implements plan (default 10 iterations)
-node .ralph/run.js my-feature build
-# or
-npm run ralph -- my-feature build
-```
-
-This is the implementation step. Ralph will iterate through your IMPLEMENTATION_PLAN.md one item at a time, implement it, add tests, update the docs, then commit the changes. Each iteration uses a fresh model context.
-
-**IMPORTANT**: Look in on what Ralph is doing and ensure he is going down the right path. If he starts to stray, don't hesitate to interrupt the loop and modify the AGENTS.md file to steer him, or go back to plan mode and rebuild the plan.
+> ⚠️ **During build mode**: Monitor Ralph's progress. If he strays, interrupt and update `AGENTS.md` to steer him, re-run plan mode, or scrap the plan and spec and start over.
 
 ---
 
-## NPM Integration
+## Usage
 
-Add these scripts to your `package.json` for easy access:
+### Interactive Mode
+
+Run without arguments for a guided experience:
+
+```bash
+node .ralph/run.js
+```
+
+```
+🍩 Ralph Wiggum - Interactive Mode
+
+Available specs:
+  1. my-feature
+  2. auth-system
+
+Enter spec name (or number): 1
+
+Modes:
+  1. plan  - Analyze codebase and create implementation plan
+  2. build - Implement tasks from the plan
+
+Select mode [1/2 or plan/build] (default: build): plan
+Number of iterations (default: 5): 
+```
+
+### Command Line
+
+```bash
+node .ralph/run.js <spec-name> [mode] [iterations]
+```
+
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `spec-name` | Name of spec file (without `.md`) | Required |
+| `mode` | `plan` or `build` | `build` |
+| `iterations` | Number of loop iterations | 5 (plan) / 10 (build) |
+
+Examples:
+
+```bash
+node .ralph/run.js my-feature              # Build mode, 10 iterations
+node .ralph/run.js my-feature plan         # Plan mode, 5 iterations
+node .ralph/run.js my-feature build 20     # Build mode, 20 iterations
+node .ralph/run.js my-feature plan 3       # Plan mode, 3 iterations
+```
+
+### NPM Scripts
+
+Add to your `package.json`:
 
 ```json
 {
@@ -131,17 +191,10 @@ Add these scripts to your `package.json` for easy access:
 Then run:
 
 ```bash
-# Build mode (10 iterations)
-npm run ralph -- my-feature
-
-# Build mode with custom iterations
-npm run ralph -- my-feature build 20
-
-# Plan mode (5 iterations)
-npm run ralph -- my-feature plan
-
-# Plan mode with custom iterations
-npm run ralph -- my-feature plan 10
+npm run ralph                              # Interactive mode
+npm run ralph -- my-feature                # Build mode
+npm run ralph -- my-feature plan           # Plan mode
+npm run ralph -- my-feature build 20       # Build with 20 iterations
 ```
 
 ---
@@ -154,13 +207,14 @@ npm run ralph -- my-feature plan 10
 node .ralph/run.js <spec-name> plan [iterations]
 ```
 
-- Copies spec to `active.md` for prompts to reference
-- Analyzes codebase against specifications
-- Creates/updates `IMPLEMENTATION_PLAN.md` with prioritized tasks
-- Identifies gaps, TODOs, and inconsistencies
-- **Does NOT implement anything**—planning only
+| What it does | What it doesn't do |
+|--------------|-------------------|
+| ✅ Analyzes codebase against spec | ❌ Write any code |
+| ✅ Creates/updates `IMPLEMENTATION_PLAN.md` | ❌ Run tests |
+| ✅ Identifies gaps and inconsistencies | ❌ Make commits |
+| ✅ Prioritizes tasks | |
 
-Use plan mode when starting a new feature or when you need to reassess priorities.
+**When to use**: Starting a new feature, or reassessing priorities mid-project.
 
 ### Build Mode
 
@@ -168,14 +222,15 @@ Use plan mode when starting a new feature or when you need to reassess prioritie
 node .ralph/run.js <spec-name> [build] [iterations]
 ```
 
-- Copies spec to `active.md` for prompts to reference
-- Picks the most important task from `IMPLEMENTATION_PLAN.md`
-- Implements using Claude Code with parallel subagents
-- Runs tests after each change
-- Commits and pushes after each successful implementation
-- Updates the implementation plan as tasks complete
+| What it does |
+|--------------|
+| ✅ Picks highest-priority incomplete task |
+| ✅ Implements using Claude Code + subagents |
+| ✅ Runs tests after each change |
+| ✅ Commits and pushes after success |
+| ✅ Updates `IMPLEMENTATION_PLAN.md` |
 
-Use build mode for actual development work.
+**When to use**: After you've reviewed and approved the plan.
 
 ---
 
@@ -183,31 +238,37 @@ Use build mode for actual development work.
 
 ```
 .ralph/
-├── .env                  # API keys and configuration (create from .env.example)
-├── AGENTS.md             # Operational guide: build commands, patterns, rules
-├── IMPLEMENTATION_PLAN.md # Current task checklist (auto-managed by Ralph)
-├── specs/                # Feature specifications
-│   ├── sample.md         # Template for new specs
-│   └── active.md         # Auto-generated: copy of current spec being worked on
-├── prompts/              # Mode-specific instructions
-│   ├── plan.md           # Instructions for plan mode
-│   ├── build.md          # Instructions for build mode
-│   └── requirements.md   # Template for gathering requirements
-├── run.js                # Main entry point (Node.js)
-├── loop.sh               # Iteration loop script
-├── Dockerfile            # Container definition
-└── docker-compose.yml    # Docker compose config
+├── .env                   # API keys (create from .env.example)
+├── AGENTS.md              # Build commands, patterns, rules
+├── IMPLEMENTATION_PLAN.md # Task checklist (auto-managed)
+├── specs/
+│   ├── sample.md          # Template for new specs
+│   ├── my-feature.md      # Your feature specs
+│   └── active.md          # Auto-copied current spec
+├── prompts/
+│   ├── plan.md            # Plan mode instructions
+│   ├── build.md           # Build mode instructions
+│   └── requirements.md    # Template for gathering requirements
+├── run.js                 # Entry point (Node.js)
+├── loop.sh                # Iteration loop (runs in Docker)
+├── Dockerfile             # Container definition
+└── docker-compose.yml     # Docker compose config
 ```
 
 ---
 
 ## Branch Strategy
 
-Ralph automatically manages branches based on your spec name:
+Ralph automatically manages branches:
 
-- Spec `my-feature` → Branch `ralph/my-feature`
-- Creates the branch if it doesn't exist
+| Spec Name | Branch Created |
+|-----------|---------------|
+| `my-feature` | `ralph/my-feature` |
+| `auth-system` | `ralph/auth-system` |
+
+- Creates branch if it doesn't exist
 - Commits and pushes after each successful iteration
+- You can switch specs by running with a different spec name
 
 ---
 
@@ -215,10 +276,11 @@ Ralph automatically manages branches based on your spec name:
 
 When you run Ralph with a spec name:
 
-1. The spec file (e.g., `.ralph/specs/my-feature.md`) is copied to `.ralph/specs/active.md`
-2. Prompts reference `active.md` as the single source of truth
-3. This allows prompts to always look at `@.ralph/specs/active.md` without needing variable substitution
-4. The branch name is still derived from the original spec name
+1. **Copy**: `specs/my-feature.md` → `specs/active.md`
+2. **Reference**: Prompts always read `@.ralph/specs/active.md`
+3. **Branch**: Still named after original spec (`ralph/my-feature`)
+
+This pattern lets prompts reference a consistent file path without variable substitution.
 
 ---
 
@@ -226,89 +288,114 @@ When you run Ralph with a spec name:
 
 ### AGENTS.md
 
-This file tells Ralph how to work in your codebase. Include:
+Your operational guide. Keep it brief—loaded every iteration.
 
-- **Build commands**: How to compile/build the project
-- **Test commands**: How to run tests (unit, integration)
-- **Critical rules**: Patterns and conventions Ralph must follow
-- **Project structure**: Where different code lives
-
-Keep this file brief—it's loaded into every iteration's context.
+| Section | Purpose |
+|---------|---------|
+| Build & Validate | Commands to build, test, lint |
+| Critical Rules | Must-follow patterns and gotchas |
+| Project Structure | Where key code lives |
+| Key Patterns | Architecture conventions |
 
 ### Specs
 
-Create detailed specifications in `.ralph/specs/`. Each spec should include:
+Create detailed specifications in `.ralph/specs/`. Include:
 
-- Problem statement
-- Requirements (functional and non-functional)
-- Architecture/design decisions
-- API contracts
-- UI/UX details if applicable
+- Problem statement and requirements
+- Architecture decisions
+- API contracts / data models
+- Edge cases and error handling
+- Testing strategy
 
 See `.ralph/specs/sample.md` for a comprehensive template.
 
 ### Implementation Plan
 
-The `IMPLEMENTATION_PLAN.md` is a living document that Ralph updates as it works:
+A living checklist that Ralph updates:
 
-- Checkbox items for each task
-- Prioritized from top to bottom
-- Ralph checks items off as it completes them
-- Add notes or learnings that persist across iterations
+- `- [ ]` Pending tasks
+- `- [x]` Completed tasks
+- Prioritized top to bottom
+- Add notes that persist across iterations
 
 ---
 
 ## Requirements
 
-- **Docker**: Required for running the containerized Claude Code environment
-- **Node.js**: For the run script (`run.js`)
-- **Git**: For branch management and commits
-- **Bedrock API Key**: For Claude Code access
+| Requirement | Version | Notes |
+|-------------|---------|-------|
+| Docker | Latest | Docker Desktop on Windows/Mac |
+| Node.js | 18+ | For run scripts |
+| Git | 2.x+ | Branch management |
+| API Key | — | AWS Bedrock or Anthropic |
 
 ---
 
 ## Tips
 
-1. **Start with plan mode**: Let Ralph analyze and create a solid implementation plan before building
-2. **Review the plan**: Check `IMPLEMENTATION_PLAN.md` between modes to ensure priorities are correct
-3. **Keep AGENTS.md minimal**: Only operational information—no status updates or progress notes
-4. **Write detailed specs**: The more context Ralph has, the better the implementation
-5. **Monitor iterations**: Watch the output to catch issues early
-6. **One spec at a time**: The `active.md` pattern ensures focus on a single feature
+| Tip | Why |
+|-----|-----|
+| 🎯 **Start with plan mode** | Creates a solid task list before coding |
+| 👀 **Review the plan** | Catch misunderstandings before build phase |
+| 📝 **Keep AGENTS.md minimal** | Large files waste context tokens |
+| 📖 **Write detailed specs** | More context = better implementation |
+| 👁️ **Monitor iterations** | Catch issues before they compound |
+| 🎯 **One spec at a time** | `active.md` enforces focus |
 
 ---
 
 ## Troubleshooting
 
 ### "Spec name is required"
-Provide the spec name as the first argument: `npm run ralph -- my-feature`
+
+Run with a spec name or use interactive mode:
+
+```bash
+node .ralph/run.js my-feature
+# or
+node .ralph/run.js  # interactive
+```
 
 ### "Spec file not found"
+
 Create the spec at `.ralph/specs/{spec-name}.md`
 
 ### Docker image not building
-Ensure Docker is running and you have permissions. Try: `docker build -t ralph-wiggum -f .ralph/Dockerfile .`
 
-### "bad interpreter" or script errors in Docker (Windows)
-If you see errors like `/bin/bash^M: bad interpreter`, the shell scripts have Windows (CRLF) line endings. Fix with:
 ```bash
-# Re-normalize line endings after cloning
+# Ensure Docker is running, then:
+docker build -t ralph-wiggum -f .ralph/Dockerfile .
+```
+
+### "bad interpreter" error (Windows)
+
+Shell scripts have Windows line endings. Fix with:
+
+```bash
 git add --renormalize .
 git commit -m "Normalize line endings"
 ```
-Or manually convert the files:
+
+Or manually:
+
 ```bash
-# Using Git Bash or WSL
 sed -i 's/\r$//' .ralph/*.sh
 ```
+
+### Ralph keeps making the same mistakes
+
+Update `.ralph/AGENTS.md` with a new "Critical Rule" to prevent the behavior.
 
 ---
 
 ## References
 
-The initial `build.md` and `plan.md` prompts as well as the `loop.sh` come from this repo: https://github.com/ghuntley/how-to-ralph-wiggum
+Based on the [Ralph Wiggum loop pattern](https://github.com/ghuntley/how-to-ralph-wiggum) by Geoffrey Huntley.
 
-### Recommended reading
-- [How to Ralph](https://github.com/ghuntley/how-to-ralph-wiggum)
-- [Ralph Wiggum Playbook](https://paddo.dev/blog/ralph-wiggum-playbook/)
-- [You're using Ralph Wiggum loops wrong](https://www.youtube.com/watch?v=I7azCAgoUHc)
+### Recommended Reading
+
+| Resource | Description |
+|----------|-------------|
+| [How to Ralph](https://github.com/ghuntley/how-to-ralph-wiggum) | Original concept and prompts |
+| [Ralph Wiggum Playbook](https://paddo.dev/blog/ralph-wiggum-playbook/) | Practical tips and workflows |
+| [You're using Ralph wrong](https://www.youtube.com/watch?v=I7azCAgoUHc) | Common mistakes to avoid |
