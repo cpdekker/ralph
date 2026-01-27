@@ -1,0 +1,22 @@
+# Ralph Wiggum Docker Compose
+# Usage: docker-compose -f .ralph/docker-compose.yml run --rm ralph
+
+services:
+  ralph:
+    build:
+      context: ..
+      dockerfile: .ralph/Dockerfile
+    container_name: ralph-wiggum
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    env_file:
+      - .env
+    volumes:
+      - ..:/workspace
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+    command: bash
