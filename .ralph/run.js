@@ -1,10 +1,55 @@
 #!/usr/bin/env node
-const { execSync, spawnSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
 const rootDir = path.resolve(__dirname, '..');
+
+// Track the running Docker process for cleanup
+let dockerProcess = null;
+
+// Handle Ctrl+C and other termination signals
+function setupSignalHandlers() {
+  const cleanup = (signal) => {
+    console.log(`\n\x1b[33mReceived ${signal}, shutting down...\x1b[0m`);
+
+    if (dockerProcess) {
+      // Kill the Docker container
+      try {
+        // First try graceful termination
+        dockerProcess.kill('SIGTERM');
+
+        // Force kill after 3 seconds if still running
+        setTimeout(() => {
+          if (dockerProcess && !dockerProcess.killed) {
+            console.log('\x1b[33mForce killing Docker container...\x1b[0m');
+            dockerProcess.kill('SIGKILL');
+          }
+        }, 3000);
+      } catch (e) {
+        // Process might already be dead
+      }
+    }
+
+    // Exit after a short delay to allow cleanup
+    setTimeout(() => {
+      process.exit(130); // 128 + SIGINT(2) = 130
+    }, 500);
+  };
+
+  process.on('SIGINT', () => cleanup('SIGINT'));
+  process.on('SIGTERM', () => cleanup('SIGTERM'));
+
+  // Windows doesn't have SIGINT in the same way, handle it differently
+  if (process.platform === 'win32') {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    rl.on('SIGINT', () => cleanup('SIGINT'));
+  }
+}
 
 // Convert Windows paths to Docker-compatible format
 // Docker on Windows needs forward slashes and drive letters like /c/ instead of C:\
@@ -60,10 +105,11 @@ function checkEnvFile() {
   }
 }
 
-function runRalph(spec, mode, iterations) {
+function runRalph(spec, mode, iterations, verbose) {
   console.log(`\n\x1b[36mSpec: ${spec}\x1b[0m`);
   console.log(`\x1b[36mMode: ${mode}\x1b[0m`);
-  console.log(`\x1b[36mIterations: ${iterations}\x1b[0m\n`);
+  console.log(`\x1b[36mIterations: ${iterations}\x1b[0m`);
+  console.log(`\x1b[36mVerbose: ${verbose}\x1b[0m\n`);
 
   checkDockerImage();
   checkEnvFile();
@@ -88,13 +134,27 @@ function runRalph(spec, mode, iterations) {
     String(iterations),
   ];
 
-  const result = spawnSync('docker', dockerArgs, {
+  // Add verbose flag if enabled
+  if (verbose) {
+    dockerArgs.push('--verbose');
+  }
+
+  // Use spawn instead of spawnSync for better signal handling
+  dockerProcess = spawn('docker', dockerArgs, {
     stdio: 'inherit',
     cwd: rootDir,
     shell: true,
   });
 
-  process.exit(result.status || 0);
+  dockerProcess.on('close', (code) => {
+    dockerProcess = null;
+    process.exit(code || 0);
+  });
+
+  dockerProcess.on('error', (err) => {
+    console.error('\x1b[31mFailed to start Docker:\x1b[0m', err.message);
+    process.exit(1);
+  });
 }
 
 async function interactivePrompt() {
@@ -159,25 +219,35 @@ async function interactivePrompt() {
   const iterInput = await question(`Number of iterations (default: ${defaultIterations}): `);
   const iterations = parseInt(iterInput.trim()) || defaultIterations;
 
+  const verboseInput = await question('Verbose output? [y/N]: ');
+  const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
+
   rl.close();
 
-  runRalph(spec, mode, iterations);
+  runRalph(spec, mode, iterations, verbose);
 }
+
+// Setup signal handlers first
+setupSignalHandlers();
 
 // Main execution
 const args = process.argv.slice(2);
 const isNumeric = (str) => !isNaN(parseInt(str)) && isFinite(str);
 
+// Check for verbose flag
+const verbose = args.includes('--verbose') || args.includes('-v');
+const filteredArgs = args.filter(a => a !== '--verbose' && a !== '-v');
+
 // No arguments - interactive mode
-if (args.length === 0) {
+if (filteredArgs.length === 0) {
   interactivePrompt().catch((err) => {
     console.error(err);
     process.exit(1);
   });
 } else {
   // Parse arguments
-  // Usage: run.js <spec-name> [plan|build] [iterations]
-  const spec = args[0];
+  // Usage: run.js <spec-name> [plan|build] [iterations] [--verbose]
+  const spec = filteredArgs[0];
 
   if (!validateSpec(spec)) {
     console.error(`\x1b[31mError: Spec file not found: .ralph/specs/${spec}.md\x1b[0m`);
@@ -193,21 +263,21 @@ if (args.length === 0) {
   let mode = 'build';
   let iterations = 10;
 
-  if (args[1] === 'plan') {
+  if (filteredArgs[1] === 'plan') {
     mode = 'plan';
     iterations = 5;
-    if (args[2] && isNumeric(args[2])) {
-      iterations = parseInt(args[2]);
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
     }
-  } else if (args[1] === 'build') {
+  } else if (filteredArgs[1] === 'build') {
     mode = 'build';
     iterations = 10;
-    if (args[2] && isNumeric(args[2])) {
-      iterations = parseInt(args[2]);
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
     }
-  } else if (args[1] && isNumeric(args[1])) {
-    iterations = parseInt(args[1]);
+  } else if (filteredArgs[1] && isNumeric(filteredArgs[1])) {
+    iterations = parseInt(filteredArgs[1]);
   }
 
-  runRalph(spec, mode, iterations);
+  runRalph(spec, mode, iterations, verbose);
 }

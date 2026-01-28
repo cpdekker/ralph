@@ -1,16 +1,33 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build] [max_iterations]
+# Usage: ./loop.sh <spec-name> [plan|build] [max_iterations] [--verbose]
 # Examples:
-#   ./loop.sh my-feature              # Build mode, 10 iterations
-#   ./loop.sh my-feature plan         # Plan mode, 5 iterations
-#   ./loop.sh my-feature build 20     # Build mode, 20 iterations
-#   ./loop.sh my-feature plan 10      # Plan mode, 10 iterations
+#   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
+#   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
+#   ./loop.sh my-feature build 20           # Build mode, 20 iterations, quiet
+#   ./loop.sh my-feature plan 10 --verbose  # Plan mode, 10 iterations, verbose
+
+# Parse arguments
+SPEC_NAME=""
+MODE=""
+MAX_ITERATIONS=""
+VERBOSE=false
+
+for arg in "$@"; do
+    if [ "$arg" = "--verbose" ] || [ "$arg" = "-v" ]; then
+        VERBOSE=true
+    elif [ -z "$SPEC_NAME" ]; then
+        SPEC_NAME="$arg"
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ]); then
+        MODE="$arg"
+    elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
+        MAX_ITERATIONS="$arg"
+    fi
+done
 
 # First argument is required: spec name
-SPEC_NAME="$1"
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build] [max_iterations]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -28,25 +45,14 @@ ACTIVE_SPEC="./.ralph/specs/active.md"
 echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
 cp "$SPEC_FILE" "$ACTIVE_SPEC"
 
-# Parse mode (second argument)
-if [ "$2" = "plan" ]; then
-    MODE="plan"
+# Set defaults based on mode
+if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="./.ralph/prompts/plan.md"
-    MAX_ITERATIONS=${3:-5}
-elif [ "$2" = "build" ]; then
-    MODE="build"
-    PROMPT_FILE="./.ralph/prompts/build.md"
-    MAX_ITERATIONS=${3:-10}
-elif [[ "$2" =~ ^[0-9]+$ ]]; then
-    # Second arg is a number, treat as iterations for build mode
-    MODE="build"
-    PROMPT_FILE="./.ralph/prompts/build.md"
-    MAX_ITERATIONS=$2
+    MAX_ITERATIONS=${MAX_ITERATIONS:-5}
 else
-    # Default to build mode
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
-    MAX_ITERATIONS=${2:-10}
+    MAX_ITERATIONS=${MAX_ITERATIONS:-10}
 fi
 
 ITERATION=0
@@ -77,11 +83,12 @@ if [ "$CURRENT_BRANCH" != "$TARGET_BRANCH" ]; then
 fi
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Spec:   $SPEC_NAME"
-echo "Mode:   $MODE"
-echo "Prompt: $PROMPT_FILE"
-echo "Branch: $CURRENT_BRANCH"
-[ $MAX_ITERATIONS -gt 0 ] && echo "Max:    $MAX_ITERATIONS iterations"
+echo "Spec:    $SPEC_NAME"
+echo "Mode:    $MODE"
+echo "Prompt:  $PROMPT_FILE"
+echo "Branch:  $CURRENT_BRANCH"
+echo "Verbose: $VERBOSE"
+[ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS iterations"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Verify prompt file exists
@@ -109,6 +116,10 @@ if ! claude -p --output-format json <<< "Reply with only the word 'ok'" > /dev/n
 fi
 echo -e "\033[1;32m✓ Claude CLI authenticated successfully\033[0m"
 echo ""
+
+# Create temp directory for output logs
+TEMP_DIR=$(mktemp -d)
+trap "rm -rf $TEMP_DIR" EXIT
 
 # ASCII art digits for turn display
 print_turn_banner() {
@@ -284,6 +295,70 @@ print_turn_banner() {
     echo ""
 }
 
+# Function to print a spinner while waiting
+spin() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    while ps -p $pid > /dev/null 2>&1; do
+        for i in $(seq 0 9); do
+            printf "\r  \033[1;36m${spinstr:$i:1}\033[0m Working... "
+            sleep $delay
+        done
+    done
+    printf "\r                      \r"
+}
+
+# Function to generate iteration summary
+generate_summary() {
+    local log_file=$1
+    local iteration=$2
+    
+    echo ""
+    echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
+    echo -e "\033[1;36m│  TURN $iteration SUMMARY                                            │\033[0m"
+    echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+    echo ""
+    
+    # Extract key information from the JSON log
+    # Look for file changes, commits, and key actions
+    
+    # Count files modified (look for write/edit operations)
+    local files_changed=$(grep -o '"tool":"write"\|"tool":"str_replace_editor"\|"tool":"create"\|"tool":"edit"' "$log_file" 2>/dev/null | wc -l)
+    
+    # Look for git commits
+    local commits=$(grep -o 'git commit' "$log_file" 2>/dev/null | wc -l)
+    
+    # Look for test runs
+    local tests=$(grep -o 'npm test\|npm run test\|npx nx test\|jest\|vitest' "$log_file" 2>/dev/null | wc -l)
+    
+    # Get the last assistant message as a summary (simplified extraction)
+    local last_message=$(grep -o '"type":"assistant"[^}]*"text":"[^"]*"' "$log_file" 2>/dev/null | tail -1 | sed 's/.*"text":"\([^"]*\)".*/\1/' | head -c 500)
+    
+    echo -e "  \033[1;32m✓\033[0m Files touched: ~$files_changed"
+    echo -e "  \033[1;32m✓\033[0m Git commits: $commits"
+    echo -e "  \033[1;32m✓\033[0m Test runs: $tests"
+    echo ""
+    
+    # Show recent git log if there were commits
+    if [ $commits -gt 0 ]; then
+        echo -e "  \033[1;33mRecent commits:\033[0m"
+        git log --oneline -3 2>/dev/null | sed 's/^/    /'
+        echo ""
+    fi
+    
+    # Show changed files from git status
+    local changed_files=$(git diff --name-only HEAD~1 2>/dev/null | head -10)
+    if [ -n "$changed_files" ]; then
+        echo -e "  \033[1;33mChanged files:\033[0m"
+        echo "$changed_files" | sed 's/^/    /'
+        echo ""
+    fi
+    
+    echo -e "\033[1;36m────────────────────────────────────────────────────────────\033[0m"
+    echo ""
+}
+
 while true; do
     ITERATION=$((ITERATION + 1))
     
@@ -295,18 +370,49 @@ while true; do
     # Display turn banner
     print_turn_banner $ITERATION
 
+    # Prepare log file for this iteration
+    LOG_FILE="$TEMP_DIR/iteration_${ITERATION}.log"
+
     # Run Ralph iteration with selected prompt
     # -p: Headless mode (non-interactive, reads from stdin)
     # --dangerously-skip-permissions: Auto-approve all tool calls (YOLO mode)
     # --output-format=stream-json: Structured output for logging/monitoring
-    # --model opus: Primary agent uses Opus for complex reasoning (task selection, prioritization)
-    #               Can use 'sonnet' in build mode for speed if plan is clear and tasks well-defined
+    # --model opus: Primary agent uses Opus for complex reasoning
     # --verbose: Detailed execution logging
-    cat "$PROMPT_FILE" | claude -p \
-        --dangerously-skip-permissions \
-        --output-format=stream-json \
-        --model opus \
-        --verbose
+    
+    if [ "$VERBOSE" = true ]; then
+        # Verbose mode: show full output and log to file
+        cat "$PROMPT_FILE" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --model opus \
+            --verbose 2>&1 | tee "$LOG_FILE"
+    else
+        # Quiet mode: show spinner, log to file
+        echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $ITERATION..."
+        echo ""
+        
+        cat "$PROMPT_FILE" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --model opus \
+            --verbose > "$LOG_FILE" 2>&1 &
+        
+        CLAUDE_PID=$!
+        spin $CLAUDE_PID
+        wait $CLAUDE_PID
+        CLAUDE_EXIT=$?
+        
+        if [ $CLAUDE_EXIT -ne 0 ]; then
+            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+            echo "  Check log: $LOG_FILE"
+        else
+            echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+        fi
+    fi
+
+    # Generate and display summary
+    generate_summary "$LOG_FILE" "$ITERATION"
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {

@@ -157,7 +157,7 @@ Number of iterations (default: 5):
 ### Command Line
 
 ```bash
-node .ralph/run.js <spec-name> [mode] [iterations]
+node .ralph/run.js <spec-name> [mode] [iterations] [--verbose]
 ```
 
 | Argument | Description | Default |
@@ -165,14 +165,16 @@ node .ralph/run.js <spec-name> [mode] [iterations]
 | `spec-name` | Name of spec file (without `.md`) | Required |
 | `mode` | `plan` or `build` | `build` |
 | `iterations` | Number of loop iterations | 5 (plan) / 10 (build) |
+| `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 
 Examples:
 
 ```bash
-node .ralph/run.js my-feature              # Build mode, 10 iterations
-node .ralph/run.js my-feature plan         # Plan mode, 5 iterations
-node .ralph/run.js my-feature build 20     # Build mode, 20 iterations
-node .ralph/run.js my-feature plan 3       # Plan mode, 3 iterations
+node .ralph/run.js my-feature              # Build mode, 10 iterations, quiet
+node .ralph/run.js my-feature plan         # Plan mode, 5 iterations, quiet
+node .ralph/run.js my-feature build 20     # Build mode, 20 iterations, quiet
+node .ralph/run.js my-feature --verbose    # Build mode with full output
+node .ralph/run.js my-feature plan -v      # Plan mode with full output
 ```
 
 ### NPM Scripts
@@ -192,9 +194,11 @@ Then run:
 
 ```bash
 npm run ralph                              # Interactive mode
-npm run ralph -- my-feature                # Build mode
-npm run ralph -- my-feature plan           # Plan mode
+npm run ralph -- my-feature                # Build mode (quiet)
+npm run ralph -- my-feature plan           # Plan mode (quiet)
 npm run ralph -- my-feature build 20       # Build with 20 iterations
+npm run ralph -- my-feature --verbose      # Build with full output
+npm run ralph -- my-feature plan -v        # Plan with full output
 ```
 
 ---
