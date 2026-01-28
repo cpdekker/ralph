@@ -8,46 +8,57 @@ const rootDir = path.resolve(__dirname, '..');
 
 // Track the running Docker process for cleanup
 let dockerProcess = null;
+let signalRl = null;
+
+// Cleanup function for signal handlers
+function cleanup(signal) {
+  console.log(`\n\x1b[33mReceived ${signal}, shutting down...\x1b[0m`);
+
+  if (dockerProcess) {
+    // Kill the Docker container
+    try {
+      // First try graceful termination
+      dockerProcess.kill('SIGTERM');
+
+      // Force kill after 3 seconds if still running
+      setTimeout(() => {
+        if (dockerProcess && !dockerProcess.killed) {
+          console.log('\x1b[33mForce killing Docker container...\x1b[0m');
+          dockerProcess.kill('SIGKILL');
+        }
+      }, 3000);
+    } catch (e) {
+      // Process might already be dead
+    }
+  }
+
+  // Close signal readline if it exists
+  if (signalRl) {
+    signalRl.close();
+  }
+
+  // Exit after a short delay to allow cleanup
+  setTimeout(() => {
+    process.exit(130); // 128 + SIGINT(2) = 130
+  }, 500);
+}
 
 // Handle Ctrl+C and other termination signals
 function setupSignalHandlers() {
-  const cleanup = (signal) => {
-    console.log(`\n\x1b[33mReceived ${signal}, shutting down...\x1b[0m`);
-
-    if (dockerProcess) {
-      // Kill the Docker container
-      try {
-        // First try graceful termination
-        dockerProcess.kill('SIGTERM');
-
-        // Force kill after 3 seconds if still running
-        setTimeout(() => {
-          if (dockerProcess && !dockerProcess.killed) {
-            console.log('\x1b[33mForce killing Docker container...\x1b[0m');
-            dockerProcess.kill('SIGKILL');
-          }
-        }, 3000);
-      } catch (e) {
-        // Process might already be dead
-      }
-    }
-
-    // Exit after a short delay to allow cleanup
-    setTimeout(() => {
-      process.exit(130); // 128 + SIGINT(2) = 130
-    }, 500);
-  };
-
   process.on('SIGINT', () => cleanup('SIGINT'));
   process.on('SIGTERM', () => cleanup('SIGTERM'));
+}
 
-  // Windows doesn't have SIGINT in the same way, handle it differently
-  if (process.platform === 'win32') {
-    const rl = readline.createInterface({
+// Setup Windows-specific SIGINT handler (only call after interactive prompts are done)
+function setupWindowsSignalHandler() {
+  if (process.platform === 'win32' && !signalRl) {
+    signalRl = readline.createInterface({
       input: process.stdin,
       output: process.stdout,
     });
-    rl.on('SIGINT', () => cleanup('SIGINT'));
+    signalRl.on('SIGINT', () => cleanup('SIGINT'));
+    // Prevent the readline from interfering with normal output
+    signalRl.on('line', () => { });
   }
 }
 
@@ -114,6 +125,9 @@ function runRalph(spec, mode, iterations, verbose) {
   checkDockerImage();
   checkEnvFile();
 
+  // Setup Windows signal handler now that interactive prompts are done
+  setupWindowsSignalHandler();
+
   // Convert rootDir to Docker-compatible path for volume mount
   const dockerRootDir = toDockerPath(rootDir);
 
@@ -148,6 +162,9 @@ function runRalph(spec, mode, iterations, verbose) {
 
   dockerProcess.on('close', (code) => {
     dockerProcess = null;
+    if (signalRl) {
+      signalRl.close();
+    }
     process.exit(code || 0);
   });
 
@@ -278,6 +295,9 @@ if (filteredArgs.length === 0) {
   } else if (filteredArgs[1] && isNumeric(filteredArgs[1])) {
     iterations = parseInt(filteredArgs[1]);
   }
+
+  // Setup Windows signal handler for non-interactive mode
+  setupWindowsSignalHandler();
 
   runRalph(spec, mode, iterations, verbose);
 }
