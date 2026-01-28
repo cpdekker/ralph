@@ -120,6 +120,176 @@ function checkEnvFile() {
   }
 }
 
+function getGitRemoteUrl() {
+  try {
+    const url = execSync('git remote get-url origin', {
+      encoding: 'utf-8',
+      cwd: rootDir,
+    }).trim();
+    // Convert GitHub SSH to HTTPS format for token auth
+    if (url.startsWith('git@github.com:')) {
+      return url.replace('git@github.com:', 'https://github.com/');
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function getGitBranch() {
+  try {
+    return execSync('git branch --show-current', {
+      encoding: 'utf-8',
+      cwd: rootDir,
+    }).trim();
+  } catch {
+    return 'main';
+  }
+}
+
+function runRalphBackground(spec, mode, iterations, verbose) {
+  console.log(`\n\x1b[35m🚀 BACKGROUND MODE\x1b[0m`);
+  console.log(`\x1b[36mSpec: ${spec}\x1b[0m`);
+  console.log(`\x1b[36mMode: ${mode}\x1b[0m`);
+  console.log(`\x1b[36mIterations: ${iterations}\x1b[0m\n`);
+
+  checkDockerImage();
+  checkEnvFile();
+
+  const repoUrl = getGitRemoteUrl();
+  if (!repoUrl) {
+    console.error('\x1b[31mError: Could not get git remote URL. Is this a git repository?\x1b[0m');
+    process.exit(1);
+  }
+
+  // Check for uncommitted changes to .ralph directory
+  try {
+    const status = execSync('git status --porcelain .ralph/', {
+      encoding: 'utf-8',
+      cwd: rootDir,
+    }).trim();
+    if (status) {
+      console.log('\x1b[33m⚠️  Warning: You have uncommitted changes in .ralph/\x1b[0m');
+      console.log('\x1b[33m   Background mode uses committed code only.\x1b[0m');
+      console.log('\x1b[33m   Consider committing your specs first.\x1b[0m\n');
+    }
+  } catch {
+    // Ignore errors
+  }
+
+  const baseBranch = getGitBranch();
+  const targetBranch = `ralph/${spec}`;
+  const containerName = `ralph-${repoName}-${spec}`.replace(/[^a-z0-9-]/g, '-');
+
+  console.log(`\x1b[36mRepo: ${repoUrl}\x1b[0m`);
+  console.log(`\x1b[36mBase branch: ${baseBranch}\x1b[0m`);
+  console.log(`\x1b[36mTarget branch: ${targetBranch}\x1b[0m`);
+  console.log(`\x1b[36mContainer: ${containerName}\x1b[0m\n`);
+
+  // Check if container already running
+  try {
+    const running = execSync(`docker ps --filter "name=${containerName}" --format "{{.Names}}"`, {
+      encoding: 'utf-8',
+      cwd: rootDir,
+    }).trim();
+    if (running) {
+      console.log(`\x1b[33mContainer ${containerName} is already running.\x1b[0m`);
+      console.log(`\nTo view logs:   docker logs -f ${containerName}`);
+      console.log(`To stop:        docker stop ${containerName}`);
+      process.exit(0);
+    }
+  } catch {
+    // Ignore errors
+  }
+
+  // Remove any stopped container with same name
+  try {
+    execSync(`docker rm ${containerName}`, { cwd: rootDir, stdio: 'ignore' });
+  } catch {
+    // Ignore if doesn't exist
+  }
+
+  // Build docker args for background mode
+  // Note: Ralph clones the repo, so he works on committed code only
+  // Local uncommitted changes to specs won't be included
+  // Use 'bash' explicitly since cloned files may not have execute permission
+  const dockerArgs = [
+    'run',
+    '-d',  // Detached mode
+    '--name', containerName,
+    '--env-file', '.ralph/.env',
+    '-e', `RALPH_REPO_URL=${repoUrl}`,
+    '-e', `RALPH_BRANCH=${targetBranch}`,
+    '-e', `RALPH_BASE_BRANCH=${baseBranch}`,
+    imageName,
+    'bash', './.ralph/loop.sh',
+    spec,
+    mode,
+    String(iterations),
+  ];
+
+  if (verbose) {
+    dockerArgs.push('--verbose');
+  }
+
+  try {
+    const containerId = execSync(`docker ${dockerArgs.join(' ')}`, {
+      encoding: 'utf-8',
+      cwd: rootDir,
+    }).trim();
+
+    console.log('\x1b[32m✓ Ralph is running in the background!\x1b[0m\n');
+    console.log('Commands:');
+    console.log(`  Check status:  docker ps --filter "name=${containerName}"`);
+    console.log(`  Stop:          docker stop ${containerName}`);
+    console.log(`  Pull changes:  git fetch origin && git checkout ${targetBranch}`);
+    console.log('');
+    console.log('\x1b[36mAttaching to logs (Ctrl+C to stop Ralph)...\x1b[0m\n');
+
+    // Attach to logs
+    const logsProcess = spawn('docker', ['logs', '-f', containerName], {
+      stdio: 'inherit',
+      cwd: rootDir,
+    });
+
+    // Handle Ctrl+C - stop the container
+    const stopContainer = () => {
+      console.log(`\n\x1b[33mStopping Ralph...\x1b[0m`);
+      try {
+        execSync(`docker stop ${containerName}`, { stdio: 'ignore' });
+        console.log(`\x1b[32mRalph stopped.\x1b[0m`);
+        console.log(`Pull changes:  git fetch origin && git checkout ${targetBranch}\n`);
+      } catch {
+        // Already stopped
+      }
+      process.exit(0);
+    };
+
+    process.on('SIGINT', stopContainer);
+    process.on('SIGTERM', stopContainer);
+
+    // Windows-specific Ctrl+C handling
+    if (process.platform === 'win32') {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      rl.on('SIGINT', stopContainer);
+      rl.on('close', () => { }); // Prevent default close behavior
+    }
+
+    logsProcess.on('close', (code) => {
+      console.log(`\n\x1b[32mRalph finished.\x1b[0m`);
+      console.log(`Pull changes:  git fetch origin && git checkout ${targetBranch}\n`);
+      process.exit(0);
+    });
+
+  } catch (error) {
+    console.error('\x1b[31mFailed to start background container:\x1b[0m', error.message);
+    process.exit(1);
+  }
+}
+
 function runRalph(spec, mode, iterations, verbose) {
   console.log(`\n\x1b[36mSpec: ${spec}\x1b[0m`);
   console.log(`\x1b[36mMode: ${mode}\x1b[0m`);
@@ -146,7 +316,7 @@ function runRalph(spec, mode, iterations, verbose) {
     '-w',
     '/workspace',
     imageName,
-    './.ralph/loop.sh',
+    'bash', './.ralph/loop.sh',
     spec,
     mode,
     String(iterations),
@@ -243,9 +413,16 @@ async function interactivePrompt() {
   const verboseInput = await question('Verbose output? [y/N]: ');
   const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
 
+  const backgroundInput = await question('Run in background? (Ralph clones repo, you keep working) [y/N]: ');
+  const background = backgroundInput.trim().toLowerCase() === 'y' || backgroundInput.trim().toLowerCase() === 'yes';
+
   rl.close();
 
-  runRalph(spec, mode, iterations, verbose);
+  if (background) {
+    runRalphBackground(spec, mode, iterations, verbose);
+  } else {
+    runRalph(spec, mode, iterations, verbose);
+  }
 }
 
 // Setup signal handlers first
@@ -255,9 +432,13 @@ setupSignalHandlers();
 const args = process.argv.slice(2);
 const isNumeric = (str) => !isNaN(parseInt(str)) && isFinite(str);
 
-// Check for verbose flag
+// Check for flags
 const verbose = args.includes('--verbose') || args.includes('-v');
-const filteredArgs = args.filter(a => a !== '--verbose' && a !== '-v');
+const background = args.includes('--background') || args.includes('-b');
+const filteredArgs = args.filter(a =>
+  a !== '--verbose' && a !== '-v' &&
+  a !== '--background' && a !== '-b'
+);
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -267,7 +448,7 @@ if (filteredArgs.length === 0) {
   });
 } else {
   // Parse arguments
-  // Usage: run.js <spec-name> [plan|build] [iterations] [--verbose]
+  // Usage: run.js <spec-name> [plan|build] [iterations] [--verbose] [--background]
   const spec = filteredArgs[0];
 
   if (!validateSpec(spec)) {
@@ -300,8 +481,12 @@ if (filteredArgs.length === 0) {
     iterations = parseInt(filteredArgs[1]);
   }
 
-  // Setup Windows signal handler for non-interactive mode
-  setupWindowsSignalHandler();
-
-  runRalph(spec, mode, iterations, verbose);
+  if (background) {
+    // Background mode - Ralph clones and works on his own copy
+    runRalphBackground(spec, mode, iterations, verbose);
+  } else {
+    // Foreground mode - Ralph works on mounted local repo
+    setupWindowsSignalHandler();
+    runRalph(spec, mode, iterations, verbose);
+  }
 }
