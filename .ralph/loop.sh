@@ -90,6 +90,26 @@ if [ ! -f "$PROMPT_FILE" ]; then
     exit 1
 fi
 
+# Verify Claude CLI authentication before starting
+echo ""
+echo "Verifying Claude CLI authentication..."
+if ! claude -p --output-format json <<< "Reply with only the word 'ok'" > /dev/null 2>&1; then
+    echo ""
+    echo -e "\033[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;31m  ERROR: Claude CLI authentication failed\033[0m"
+    echo -e "\033[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+    echo "  Possible causes:"
+    echo "    • AWS_BEARER_TOKEN_BEDROCK is missing or expired"
+    echo "    • Network connectivity issues"
+    echo ""
+    echo "  Check your .ralph/.env file and try again."
+    echo ""
+    exit 1
+fi
+echo -e "\033[1;32m✓ Claude CLI authenticated successfully\033[0m"
+echo ""
+
 # ASCII art digits for turn display
 print_turn_banner() {
     local num=$1
