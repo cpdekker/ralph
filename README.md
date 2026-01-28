@@ -59,9 +59,16 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 
 ### 1. Copy `.ralph` into your project
 
-Copy the `.ralph` directory and `.gitattributes` file to the root of your repository.
+Copy the `.ralph` directory to the root of your repository.
 
 ### 2. Configure environment
+
+Add to .gitignore
+
+```.gitignore
+# Ralph
+.ralph/.env
+```
 
 ```bash
 cp .ralph/.env.example .ralph/.env

@@ -367,6 +367,21 @@ while true; do
         break
     fi
 
+    # Check if there are any remaining unchecked items in the implementation plan
+    PLAN_FILE="./.ralph/IMPLEMENTATION_PLAN.md"
+    if [ -f "$PLAN_FILE" ]; then
+        UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+        if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+            echo ""
+            echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;32m  ✅ All tasks complete! No unchecked items remaining.\033[0m"
+            echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+            echo ""
+            break
+        fi
+        echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT unchecked items remaining"
+    fi
+
     # Display turn banner
     print_turn_banner $ITERATION
 

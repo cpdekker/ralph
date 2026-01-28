@@ -6,6 +6,10 @@ const readline = require('readline');
 
 const rootDir = path.resolve(__dirname, '..');
 
+// Derive image name from repo directory to avoid conflicts across multiple repos
+const repoName = path.basename(rootDir).toLowerCase().replace(/[^a-z0-9-]/g, '-');
+const imageName = `ralph-wiggum-${repoName}`;
+
 // Track the running Docker process for cleanup
 let dockerProcess = null;
 let signalRl = null;
@@ -93,9 +97,9 @@ function checkDockerImage() {
       encoding: 'utf-8',
       cwd: rootDir,
     });
-    if (!images.split('\n').includes('ralph-wiggum')) {
-      console.log('Building ralph-wiggum image...');
-      execSync('docker build -t ralph-wiggum -f .ralph/Dockerfile .', {
+    if (!images.split('\n').includes(imageName)) {
+      console.log(`Building ${imageName} image...`);
+      execSync(`docker build -t ${imageName} -f .ralph/Dockerfile .`, {
         stdio: 'inherit',
         cwd: rootDir,
       });
@@ -141,7 +145,7 @@ function runRalph(spec, mode, iterations, verbose) {
     `${dockerRootDir}:/workspace`,
     '-w',
     '/workspace',
-    'ralph-wiggum',
+    imageName,
     './.ralph/loop.sh',
     spec,
     mode,

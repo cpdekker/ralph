@@ -2,6 +2,7 @@ I would like to work with you to create a spec and implementation plan under `.r
 The output from this prompt should only be an implemenation plan in `.ralph\IMPLEMENTATION_PLAN.md` and a spec under `.ralph/specs`
 
 Executive Summary:
+
 Preferences:
 [Dev preferences or patterns to follow when building requirements]
 
