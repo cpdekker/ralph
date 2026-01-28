@@ -121,6 +121,9 @@ echo ""
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
+# Record start time for total elapsed tracking
+LOOP_START_TIME=$(date +%s)
+
 # ASCII art digits for turn display
 print_turn_banner() {
     local num=$1
@@ -309,15 +312,43 @@ spin() {
     printf "\r                      \r"
 }
 
+# Function to format seconds into human-readable time
+format_duration() {
+    local seconds=$1
+    local hours=$((seconds / 3600))
+    local minutes=$(((seconds % 3600) / 60))
+    local secs=$((seconds % 60))
+    
+    if [ $hours -gt 0 ]; then
+        printf "%dh %dm %ds" $hours $minutes $secs
+    elif [ $minutes -gt 0 ]; then
+        printf "%dm %ds" $minutes $secs
+    else
+        printf "%ds" $secs
+    fi
+}
+
 # Function to generate iteration summary
 generate_summary() {
     local log_file=$1
     local iteration=$2
+    local turn_start=$3
+    
+    # Calculate timing
+    local now=$(date +%s)
+    local turn_duration=$((now - turn_start))
+    local total_elapsed=$((now - LOOP_START_TIME))
+    local turn_formatted=$(format_duration $turn_duration)
+    local total_formatted=$(format_duration $total_elapsed)
     
     echo ""
     echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
     echo -e "\033[1;36m│  TURN $iteration SUMMARY                                            │\033[0m"
     echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+    echo ""
+    
+    echo -e "  \033[1;35m⏱\033[0m  Turn duration:  $turn_formatted"
+    echo -e "  \033[1;35m⏱\033[0m  Total elapsed:  $total_formatted"
     echo ""
     
     # Extract key information from the JSON log
@@ -361,6 +392,7 @@ generate_summary() {
 
 while true; do
     ITERATION=$((ITERATION + 1))
+    TURN_START_TIME=$(date +%s)
     
     if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -gt $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
@@ -429,7 +461,7 @@ while true; do
     fi
 
     # Generate and display summary
-    generate_summary "$LOG_FILE" "$ITERATION"
+    generate_summary "$LOG_FILE" "$ITERATION" "$TURN_START_TIME"
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
@@ -438,8 +470,13 @@ while true; do
     }
 done
 
+# Calculate final total elapsed time
+FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+COMPLETED_ITERATIONS=$((ITERATION - 1))
+
 echo ""
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-echo -e "\033[1;32m  Ralph completed $ITERATION iteration(s)\033[0m"
+echo -e "\033[1;32m  Ralph completed $COMPLETED_ITERATIONS iteration(s) in $FINAL_FORMATTED\033[0m"
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
 echo ""
