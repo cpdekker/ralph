@@ -62,9 +62,26 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 
 Copy the `.ralph` directory to the root of your repository.
 
-### 2. Configure environment
+### 2. Run the setup wizard (recommended)
 
-Add to .gitignore
+```bash
+node .ralph/setup.js
+```
+
+The interactive setup wizard will guide you through:
+- ✅ Checking prerequisites (Docker, Node.js, Git)
+- ✅ Creating and configuring `.ralph/.env` with your API credentials
+- ✅ Adding `.ralph/.env` to `.gitignore`
+- ✅ Adding npm scripts to `package.json` (if present)
+- ✅ Generating `AGENTS.md` using Claude (analyzes your codebase)
+- ✅ Building the Docker image
+
+### 2b. Manual setup (alternative)
+
+<details>
+<summary>Click to expand manual setup instructions</summary>
+
+Add to .gitignore:
 
 ```.gitignore
 # Ralph
@@ -89,9 +106,13 @@ GIT_TOKEN=ghp_your_personal_access_token
 | `AWS_BEARER_TOKEN_BEDROCK` | [AWS Bedrock Console](https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/api-keys?tab=short-term) |
 | `GIT_TOKEN` | [GitHub Personal Access Tokens](https://github.com/settings/tokens) — use minimal permissions, repo-scoped |
 
+Update `.ralph/AGENTS.md` with your project's build commands, test commands, and critical patterns.
+
+</details>
+
 ### 3. Customize AGENTS.md
 
-Update `.ralph/AGENTS.md` with your project's build commands, test commands, and critical patterns.
+Update `.ralph/AGENTS.md` with your project's build commands, test commands, and critical patterns (the setup wizard can help with this).
 
 <details>
 <summary>💡 Sample prompt to generate AGENTS.md</summary>
@@ -270,6 +291,7 @@ node .ralph/run.js <spec-name> [build] [iterations]
 │   ├── build.md           # Build mode instructions
 │   └── requirements.md    # Template for gathering requirements
 ├── run.js                 # Entry point (Node.js)
+├── setup.js               # Interactive setup wizard
 ├── loop.sh                # Iteration loop (runs in Docker)
 ├── Dockerfile             # Container definition
 └── docker-compose.yml     # Docker compose config
