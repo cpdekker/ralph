@@ -21,6 +21,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 - [Customization](#customization)
 - [Requirements](#requirements)
 - [Tips](#tips)
+- [Docker Image Updates](#docker-image-updates)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 
@@ -165,14 +166,18 @@ Number of iterations (default: 5):
 
 ```bash
 node .ralph/run.js <spec-name> [mode] [iterations] [--verbose]
+node .ralph/run.js [--plan|--build] [--verbose]  # Interactive with mode pre-selected
 ```
 
 | Argument | Description | Default |
 |----------|-------------|---------|
-| `spec-name` | Name of spec file (without `.md`) | Required |
+| `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
 | `mode` | `plan` or `build` | `build` |
 | `iterations` | Number of loop iterations | 5 (plan) / 10 (build) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
+| `--plan` | Pre-select plan mode in interactive | — |
+| `--build` | Pre-select build mode in interactive | — |
+| `--background` / `-b` | Run in background (Ralph clones repo) | Off |
 
 Examples:
 
@@ -192,6 +197,8 @@ Add to your `package.json`:
 {
   "scripts": {
     "ralph": "node .ralph/run.js",
+    "ralph:plan": "node .ralph/run.js --plan",
+    "ralph:build": "node .ralph/run.js --build",
     "ralph:docker": "node .ralph/docker-build.js"
   }
 }
@@ -201,6 +208,8 @@ Then run:
 
 ```bash
 npm run ralph                              # Interactive mode
+npm run ralph:plan                         # Interactive with plan mode pre-selected
+npm run ralph:build                        # Interactive with build mode pre-selected
 npm run ralph -- my-feature                # Build mode (quiet)
 npm run ralph -- my-feature plan           # Plan mode (quiet)
 npm run ralph -- my-feature build 20       # Build with 20 iterations
@@ -352,6 +361,18 @@ A living checklist that Ralph updates:
 | 📖 **Write detailed specs** | More context = better implementation |
 | 👁️ **Monitor iterations** | Catch issues before they compound |
 | 🎯 **One spec at a time** | `active.md` enforces focus |
+
+---
+
+## Docker Image Updates
+
+**Rebuild required** (`node .ralph/docker-build.js`):
+- Update Claude Code CLI version
+- Modify `Dockerfile` or `entrypoint.sh`
+
+**No rebuild needed** (mounted/passed at runtime):
+- All other `.ralph/` files (loop.sh, prompts, specs, AGENTS.md)
+- `.env` credentials (passed via `--env-file`)
 
 ---
 

@@ -348,7 +348,7 @@ function runRalph(spec, mode, iterations, verbose) {
   });
 }
 
-async function interactivePrompt() {
+async function interactivePrompt(preselectedMode = null) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -360,49 +360,60 @@ async function interactivePrompt() {
 
   const availableSpecs = getAvailableSpecs();
 
-  if (availableSpecs.length > 0) {
+  let spec = '';
+
+  // Auto-select if only one spec available
+  if (availableSpecs.length === 1) {
+    spec = availableSpecs[0];
+    console.log(`\x1b[32mAuto-selected spec: ${spec}\x1b[0m\n`);
+  } else if (availableSpecs.length > 1) {
     console.log('Available specs:');
     availableSpecs.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
     console.log('');
-  } else {
-    console.log('\x1b[33mNo specs found. Create one at .ralph/specs/<name>.md\x1b[0m\n');
-  }
 
-  let spec = '';
-  while (!spec) {
-    const input = await question('Enter spec name (or number): ');
-    const trimmed = input.trim();
+    while (!spec) {
+      const input = await question('Enter spec name (or number): ');
+      const trimmed = input.trim();
 
-    // Check if it's a number selection
-    const num = parseInt(trimmed);
-    if (!isNaN(num) && num >= 1 && num <= availableSpecs.length) {
-      spec = availableSpecs[num - 1];
-    } else if (trimmed) {
-      if (validateSpec(trimmed)) {
-        spec = trimmed;
-      } else {
-        console.log(`\x1b[31mSpec not found: .ralph/specs/${trimmed}.md\x1b[0m`);
+      // Check if it's a number selection
+      const num = parseInt(trimmed);
+      if (!isNaN(num) && num >= 1 && num <= availableSpecs.length) {
+        spec = availableSpecs[num - 1];
+      } else if (trimmed) {
+        if (validateSpec(trimmed)) {
+          spec = trimmed;
+        } else {
+          console.log(`\x1b[31mSpec not found: .ralph/specs/${trimmed}.md\x1b[0m`);
+        }
       }
     }
+  } else {
+    console.log('\x1b[33mNo specs found. Create one at .ralph/specs/<name>.md\x1b[0m\n');
+    rl.close();
+    process.exit(1);
   }
 
-  console.log('');
-  console.log('Modes:');
-  console.log('  1. plan  - Analyze codebase and create implementation plan');
-  console.log('  2. build - Implement tasks from the plan');
-  console.log('');
+  let mode = preselectedMode || '';
 
-  let mode = '';
-  while (!mode) {
-    const input = await question('Select mode [1/2 or plan/build] (default: build): ');
-    const trimmed = input.trim().toLowerCase();
+  if (preselectedMode) {
+    console.log(`\x1b[32mMode: ${preselectedMode}\x1b[0m\n`);
+  } else {
+    console.log('Modes:');
+    console.log('  1. plan  - Analyze codebase and create implementation plan');
+    console.log('  2. build - Implement tasks from the plan');
+    console.log('');
 
-    if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
-      mode = 'build';
-    } else if (trimmed === '1' || trimmed === 'plan') {
-      mode = 'plan';
-    } else {
-      console.log('\x1b[31mInvalid selection. Enter 1, 2, plan, or build.\x1b[0m');
+    while (!mode) {
+      const input = await question('Select mode [1/2 or plan/build] (default: build): ');
+      const trimmed = input.trim().toLowerCase();
+
+      if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
+        mode = 'build';
+      } else if (trimmed === '1' || trimmed === 'plan') {
+        mode = 'plan';
+      } else {
+        console.log('\x1b[31mInvalid selection. Enter 1, 2, plan, or build.\x1b[0m');
+      }
     }
   }
 
@@ -410,10 +421,10 @@ async function interactivePrompt() {
   const iterInput = await question(`Number of iterations (default: ${defaultIterations}): `);
   const iterations = parseInt(iterInput.trim()) || defaultIterations;
 
-  const verboseInput = await question('Verbose output? [y/N]: ');
+  const verboseInput = await question('Verbose output? (default: No) [y/N]: ');
   const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
 
-  const backgroundInput = await question('Run in background? (Ralph clones repo, you keep working) [y/N]: ');
+  const backgroundInput = await question('Run in background? (Ralph clones repo, you keep working) (default: No) [y/N]: ');
   const background = backgroundInput.trim().toLowerCase() === 'y' || backgroundInput.trim().toLowerCase() === 'yes';
 
   rl.close();
@@ -435,14 +446,20 @@ const isNumeric = (str) => !isNaN(parseInt(str)) && isFinite(str);
 // Check for flags
 const verbose = args.includes('--verbose') || args.includes('-v');
 const background = args.includes('--background') || args.includes('-b');
+const planFlag = args.includes('--plan');
+const buildFlag = args.includes('--build');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
-  a !== '--background' && a !== '-b'
+  a !== '--background' && a !== '-b' &&
+  a !== '--plan' && a !== '--build'
 );
+
+// Determine preselected mode from flags
+const preselectedMode = planFlag ? 'plan' : (buildFlag ? 'build' : null);
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
-  interactivePrompt().catch((err) => {
+  interactivePrompt(preselectedMode).catch((err) => {
     console.error(err);
     process.exit(1);
   });
@@ -462,8 +479,9 @@ if (filteredArgs.length === 0) {
   }
 
   // Parse mode and iterations
-  let mode = 'build';
-  let iterations = 10;
+  // Priority: positional arg > --plan/--build flag > default (build)
+  let mode = preselectedMode || 'build';
+  let iterations = mode === 'plan' ? 5 : 10;
 
   if (filteredArgs[1] === 'plan') {
     mode = 'plan';
