@@ -37,7 +37,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 │  ├── specs/           ← Feature specifications (what to build) │
 │  │   ├── my-feature.md   ← Your spec files                     │
 │  │   └── active.md       ← Auto-copied from selected spec      │
-│  ├── IMPLEMENTATION_PLAN.md  ← Task checklist (what's left)    │
+│  ├── implementation_plan.md  ← Task checklist (what's left)    │
 │  ├── AGENTS.md        ← Operational guide (how to build/test)  │
 │  └── prompts/         ← Mode-specific instructions             │
 └──────────────────────────────┬──────────────────────────────────┘
@@ -150,7 +150,7 @@ node .ralph/run.js my-feature plan   # Plan first
 node .ralph/run.js my-feature build  # Then build
 ```
 
-> ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `IMPLEMENTATION_PLAN.md`. Ensure you agree with every line—these drive the build phase.
+> ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
 
 > ⚠️ **During build mode**: Monitor Ralph's progress. If he strays, interrupt and update `AGENTS.md` to steer him, re-run plan mode, or scrap the plan and spec and start over.
 
@@ -251,7 +251,7 @@ node .ralph/run.js <spec-name> plan [iterations]
 | What it does | What it doesn't do |
 |--------------|-------------------|
 | ✅ Analyzes codebase against spec | ❌ Write any code |
-| ✅ Creates/updates `IMPLEMENTATION_PLAN.md` | ❌ Run tests |
+| ✅ Creates/updates `implementation_plan.md` | ❌ Run tests |
 | ✅ Identifies gaps and inconsistencies | ❌ Make commits |
 | ✅ Prioritizes tasks | |
 
@@ -269,7 +269,7 @@ node .ralph/run.js <spec-name> [build] [iterations]
 | ✅ Implements using Claude Code + subagents |
 | ✅ Runs tests after each change |
 | ✅ Commits and pushes after success |
-| ✅ Updates `IMPLEMENTATION_PLAN.md` |
+| ✅ Updates `implementation_plan.md` |
 
 **When to use**: After you've reviewed and approved the plan.
 
@@ -281,7 +281,7 @@ node .ralph/run.js <spec-name> [build] [iterations]
 .ralph/
 ├── .env                   # API keys (create from .env.example)
 ├── AGENTS.md              # Build commands, patterns, rules
-├── IMPLEMENTATION_PLAN.md # Task checklist (auto-managed)
+├── implementation_plan.md # Task checklist (auto-managed)
 ├── specs/
 │   ├── sample.md          # Template for new specs
 │   ├── my-feature.md      # Your feature specs

@@ -91,15 +91,15 @@ function validateSpec(spec) {
   return fs.existsSync(specPath);
 }
 
-function checkDockerImage() {
+function checkDockerImage(targetImageName = imageName) {
   try {
     const images = execSync('docker images --format "{{.Repository}}"', {
       encoding: 'utf-8',
       cwd: rootDir,
     });
-    if (!images.split('\n').includes(imageName)) {
-      console.log(`Building ${imageName} image...`);
-      execSync(`docker build -t ${imageName} -f .ralph/Dockerfile .`, {
+    if (!images.split('\n').includes(targetImageName)) {
+      console.log(`Building ${targetImageName} image...`);
+      execSync(`docker build -t ${targetImageName} -f .ralph/Dockerfile .`, {
         stdio: 'inherit',
         cwd: rootDir,
       });
@@ -153,7 +153,11 @@ function runRalphBackground(spec, mode, iterations, verbose) {
   console.log(`\x1b[36mMode: ${mode}\x1b[0m`);
   console.log(`\x1b[36mIterations: ${iterations}\x1b[0m\n`);
 
-  checkDockerImage();
+  // Use spec-specific image name for background mode to allow parallel execution
+  const specSuffix = spec.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+  const backgroundImageName = `${imageName}-${specSuffix}`;
+
+  checkDockerImage(backgroundImageName);
   checkEnvFile();
 
   const repoUrl = getGitRemoteUrl();
@@ -184,6 +188,7 @@ function runRalphBackground(spec, mode, iterations, verbose) {
   console.log(`\x1b[36mRepo: ${repoUrl}\x1b[0m`);
   console.log(`\x1b[36mBase branch: ${baseBranch}\x1b[0m`);
   console.log(`\x1b[36mTarget branch: ${targetBranch}\x1b[0m`);
+  console.log(`\x1b[36mImage: ${backgroundImageName}\x1b[0m`);
   console.log(`\x1b[36mContainer: ${containerName}\x1b[0m\n`);
 
   // Check if container already running
@@ -221,7 +226,7 @@ function runRalphBackground(spec, mode, iterations, verbose) {
     '-e', `RALPH_REPO_URL=${repoUrl}`,
     '-e', `RALPH_BRANCH=${targetBranch}`,
     '-e', `RALPH_BASE_BRANCH=${baseBranch}`,
-    imageName,
+    backgroundImageName,
     'bash', './.ralph/loop.sh',
     spec,
     mode,

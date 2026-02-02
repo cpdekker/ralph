@@ -8,14 +8,14 @@ Another turn will be started automatically to continue refining the plan.
 ## Setup
 
 1. Read `.ralph/specs/active.md` to understand what we're building
-2. Read `.ralph/IMPLEMENTATION_PLAN.md` (if present) to see current plan state
+2. Read `.ralph/implementation_plan.md` (if present) to see current plan state
 3. Read `.ralph/AGENTS.md` for project conventions
 
 ---
 
 ## Your Task
 
-Use subagents to analyze the codebase and create/update `.ralph/IMPLEMENTATION_PLAN.md`.
+Use subagents to analyze the codebase and create/update `.ralph/implementation_plan.md`.
 
 ### Research Phase
 - Use up to 500 parallel Sonnet subagents to search existing source code
@@ -25,7 +25,7 @@ Use subagents to analyze the codebase and create/update `.ralph/IMPLEMENTATION_P
 
 ### Planning Phase
 - Use an Opus subagent to analyze findings and prioritize tasks
-- Create/update `.ralph/IMPLEMENTATION_PLAN.md` with actionable items
+- Create/update `.ralph/implementation_plan.md` with actionable items
 
 ---
 
@@ -88,7 +88,7 @@ Brief description of what we're building and current status.
 
 After updating the plan:
 ```bash
-git add .ralph/IMPLEMENTATION_PLAN.md
+git add .ralph/implementation_plan.md
 git commit -m "Update implementation plan"
 git push
 ```

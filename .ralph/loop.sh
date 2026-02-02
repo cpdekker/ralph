@@ -401,7 +401,7 @@ while true; do
 
     # Check if there are any remaining unchecked items in the implementation plan (build mode only)
     if [ "$MODE" = "build" ]; then
-        PLAN_FILE="./.ralph/IMPLEMENTATION_PLAN.md"
+        PLAN_FILE="./.ralph/implementation_plan.md"
         if [ -f "$PLAN_FILE" ]; then
             UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then

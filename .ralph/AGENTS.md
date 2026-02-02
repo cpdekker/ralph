@@ -1,6 +1,6 @@
 # Ralph Wiggum - Agent Operational Guide
 
-Keep this file brief. Status updates go in `IMPLEMENTATION_PLAN.md`.
+Keep this file brief. Status updates go in `implementation_plan.md`.
 
 ## Build & Validate
 [Instructions for how Ralph can build and run tests in the project]
