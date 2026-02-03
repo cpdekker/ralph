@@ -9,7 +9,8 @@ Another turn will be started automatically to continue refining the plan.
 
 1. Read `.ralph/specs/active.md` to understand what we're building
 2. Read `.ralph/implementation_plan.md` (if present) to see current plan state
-3. Read `.ralph/AGENTS.md` for project conventions
+3. Read `.ralph/review.md` (if present) to see findings from code review
+4. Read `.ralph/AGENTS.md` for project conventions
 
 ---
 
@@ -22,10 +23,13 @@ Use subagents to analyze the codebase and create/update `.ralph/implementation_p
 - Compare current implementation against `.ralph/specs/active.md`
 - Look for: TODOs, placeholders, minimal implementations, skipped tests, missing features
 - **Do NOT assume functionality is missing** - confirm with code search first
+- **If `.ralph/review.md` exists**: Incorporate all critical and important issues into the plan
 
 ### Planning Phase
 - Use an Opus subagent to analyze findings and prioritize tasks
 - Create/update `.ralph/implementation_plan.md` with actionable items
+- **Prioritize review findings**: Bugs and critical issues from review should be addressed first
+- **Reference review**: Link plan items back to specific review findings when applicable
 
 ---
 
@@ -38,6 +42,19 @@ The plan must use this structure:
 
 ## Overview
 Brief description of what we're building and current status.
+
+---
+
+## Phase 0: Review Fixes (only if review.md exists)
+Priority fixes from code review findings. Address these FIRST.
+
+### 0.1 Critical Issues
+- [ ] [Bug/issue from review] - `path/to/file.ts:123`
+- [ ] [Another critical issue]
+
+### 0.2 Important Issues  
+- [ ] [Issue from review]
+- [ ] [Another issue]
 
 ---
 
@@ -73,6 +90,8 @@ Brief description of what we're building and current status.
 - **Be specific** - include file paths, function names, exact changes needed
 - **Order by dependency** - items that unblock others should come first within their phase
 - **Mark completed items** with `- [x]` if you find code that already implements them
+- **Review fixes first** - if `.ralph/review.md` exists, include "Phase 0: Review Fixes" with critical/important issues to address first
+- **No code samples** - describe *what* to implement, not *how*. The build loop handles implementation. Code blocks bloat the plan and waste context.
 
 ---
 

@@ -1,9 +1,10 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
 #   ./loop.sh my-feature build 20           # Build mode, 20 iterations, quiet
+#   ./loop.sh my-feature review             # Review mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan 10 --verbose  # Plan mode, 10 iterations, verbose
 
 # Parse arguments
@@ -17,7 +18,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -27,7 +28,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -49,6 +50,10 @@ cp "$SPEC_FILE" "$ACTIVE_SPEC"
 if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="./.ralph/prompts/plan.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-5}
+elif [ "$MODE" = "review" ]; then
+    SETUP_PROMPT_FILE="./.ralph/prompts/review_setup.md"
+    PROMPT_FILE="./.ralph/prompts/review.md"
+    MAX_ITERATIONS=${MAX_ITERATIONS:-10}
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
@@ -85,15 +90,21 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
+[ -n "$SETUP_PROMPT_FILE" ] && echo "Setup:   $SETUP_PROMPT_FILE"
 echo "Prompt:  $PROMPT_FILE"
 echo "Branch:  $CURRENT_BRANCH"
 echo "Verbose: $VERBOSE"
 [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS iterations"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Verify prompt file exists
+# Verify prompt file(s) exist
 if [ ! -f "$PROMPT_FILE" ]; then
     echo "Error: $PROMPT_FILE not found"
+    exit 1
+fi
+
+if [ -n "$SETUP_PROMPT_FILE" ] && [ ! -f "$SETUP_PROMPT_FILE" ]; then
+    echo "Error: $SETUP_PROMPT_FILE not found"
     exit 1
 fi
 
@@ -123,6 +134,57 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 # Record start time for total elapsed tracking
 LOOP_START_TIME=$(date +%s)
+
+# Run setup prompt if defined (for review mode)
+if [ -n "$SETUP_PROMPT_FILE" ]; then
+    echo ""
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;35m  SETUP PHASE: Running $SETUP_PROMPT_FILE\033[0m"
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+    
+    SETUP_LOG_FILE="$TEMP_DIR/setup.log"
+    
+    if [ "$VERBOSE" = true ]; then
+        cat "$SETUP_PROMPT_FILE" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose 2>&1 | tee "$SETUP_LOG_FILE"
+    else
+        echo -e "  \033[1;36m⏳\033[0m Running setup phase..."
+        echo ""
+        
+        cat "$SETUP_PROMPT_FILE" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$SETUP_LOG_FILE" 2>&1 &
+        
+        SETUP_PID=$!
+        spin $SETUP_PID
+        wait $SETUP_PID
+        SETUP_EXIT=$?
+        
+        if [ $SETUP_EXIT -ne 0 ]; then
+            echo -e "  \033[1;31m✗\033[0m Setup phase failed with code $SETUP_EXIT"
+            echo "  Check log: $SETUP_LOG_FILE"
+            exit 1
+        else
+            echo -e "  \033[1;32m✓\033[0m Setup phase completed"
+        fi
+    fi
+    
+    # Push setup changes
+    git push origin "$CURRENT_BRANCH" || {
+        echo "Failed to push. Creating remote branch..."
+        git push -u origin "$CURRENT_BRANCH"
+    }
+    
+    echo ""
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;35m  SETUP COMPLETE - Starting review loop\033[0m"
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+fi
 
 # ASCII art digits for turn display
 print_turn_banner() {
@@ -399,7 +461,7 @@ while true; do
         break
     fi
 
-    # Check if there are any remaining unchecked items in the implementation plan (build mode only)
+    # Check if there are any remaining unchecked items (build and review modes)
     if [ "$MODE" = "build" ]; then
         PLAN_FILE="./.ralph/implementation_plan.md"
         if [ -f "$PLAN_FILE" ]; then
@@ -413,6 +475,23 @@ while true; do
                 break
             fi
             echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT unchecked items remaining"
+        fi
+    elif [ "$MODE" = "review" ]; then
+        CHECKLIST_FILE="./.ralph/review_checklist.md"
+        if [ -f "$CHECKLIST_FILE" ]; then
+            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                echo ""
+                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "\033[1;32m  ✅ Review complete! All items have been reviewed.\033[0m"
+                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo ""
+                break
+            fi
+            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining to review"
+        else
+            echo -e "  \033[1;31m✗\033[0m  Review checklist not found. Run setup first."
+            break
         fi
     fi
 

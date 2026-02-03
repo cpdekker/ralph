@@ -404,20 +404,23 @@ async function interactivePrompt(preselectedMode = null) {
     console.log(`\x1b[32mMode: ${preselectedMode}\x1b[0m\n`);
   } else {
     console.log('Modes:');
-    console.log('  1. plan  - Analyze codebase and create implementation plan');
-    console.log('  2. build - Implement tasks from the plan');
+    console.log('  1. plan   - Analyze codebase and create implementation plan');
+    console.log('  2. build  - Implement tasks from the plan');
+    console.log('  3. review - Review implementation for bugs and issues');
     console.log('');
 
     while (!mode) {
-      const input = await question('Select mode [1/2 or plan/build] (default: build): ');
+      const input = await question('Select mode [1/2/3 or plan/build/review] (default: build): ');
       const trimmed = input.trim().toLowerCase();
 
       if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
         mode = 'build';
       } else if (trimmed === '1' || trimmed === 'plan') {
         mode = 'plan';
+      } else if (trimmed === '3' || trimmed === 'review') {
+        mode = 'review';
       } else {
-        console.log('\x1b[31mInvalid selection. Enter 1, 2, plan, or build.\x1b[0m');
+        console.log('\x1b[31mInvalid selection. Enter 1, 2, 3, plan, build, or review.\x1b[0m');
       }
     }
   }
@@ -453,14 +456,15 @@ const verbose = args.includes('--verbose') || args.includes('-v');
 const background = args.includes('--background') || args.includes('-b');
 const planFlag = args.includes('--plan');
 const buildFlag = args.includes('--build');
+const reviewFlag = args.includes('--review');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
   a !== '--background' && a !== '-b' &&
-  a !== '--plan' && a !== '--build'
+  a !== '--plan' && a !== '--build' && a !== '--review'
 );
 
 // Determine preselected mode from flags
-const preselectedMode = planFlag ? 'plan' : (buildFlag ? 'build' : null);
+const preselectedMode = planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null));
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -484,7 +488,7 @@ if (filteredArgs.length === 0) {
   }
 
   // Parse mode and iterations
-  // Priority: positional arg > --plan/--build flag > default (build)
+  // Priority: positional arg > --plan/--build/--review flag > default (build)
   let mode = preselectedMode || 'build';
   let iterations = mode === 'plan' ? 5 : 10;
 
@@ -496,6 +500,12 @@ if (filteredArgs.length === 0) {
     }
   } else if (filteredArgs[1] === 'build') {
     mode = 'build';
+    iterations = 10;
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
+    }
+  } else if (filteredArgs[1] === 'review') {
+    mode = 'review';
     iterations = 10;
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);

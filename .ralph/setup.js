@@ -276,6 +276,7 @@ async function setupNpmScripts(rl) {
         'ralph': 'node .ralph/run.js',
         'ralph:plan': 'node .ralph/run.js --plan',
         'ralph:build': 'node .ralph/run.js --build',
+        'ralph:review': 'node .ralph/run.js --review',
         'ralph:docker': 'node .ralph/docker-build.js',
         'ralph:setup': 'node .ralph/setup.js',
     };
@@ -516,10 +517,12 @@ function printSummary() {
         console.log(c('dim', '     npm run ralph              ') + '# Interactive mode');
         console.log(c('dim', '     npm run ralph:plan         ') + '# Interactive with plan mode');
         console.log(c('dim', '     npm run ralph:build        ') + '# Interactive with build mode');
+        console.log(c('dim', '     npm run ralph:review       ') + '# Interactive with review mode');
     } else {
         console.log(c('dim', '     node .ralph/run.js              ') + '# Interactive mode');
         console.log(c('dim', '     node .ralph/run.js <spec> plan  ') + '# Create implementation plan');
         console.log(c('dim', '     node .ralph/run.js <spec> build ') + '# Start building');
+        console.log(c('dim', '     node .ralph/run.js <spec> review') + '# Review implementation');
     }
     console.log('');
 }

@@ -15,6 +15,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 - [Modes](#modes)
   - [Plan Mode](#plan-mode)
   - [Build Mode](#build-mode)
+  - [Review Mode](#review-mode)
 - [File Structure](#file-structure)
 - [Branch Strategy](#branch-strategy)
 - [Active Spec Pattern](#active-spec-pattern)
@@ -146,13 +147,16 @@ node .ralph/docker-build.js
 node .ralph/run.js
 
 # Or specify directly
-node .ralph/run.js my-feature plan   # Plan first
-node .ralph/run.js my-feature build  # Then build
+node .ralph/run.js my-feature plan    # Plan first
+node .ralph/run.js my-feature build   # Then build
+node .ralph/run.js my-feature review  # Review the implementation
 ```
 
 > ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
 
 > ⚠️ **During build mode**: Monitor Ralph's progress. If he strays, interrupt and update `AGENTS.md` to steer him, re-run plan mode, or scrap the plan and spec and start over.
+
+> 💡 **After build mode**: Run review mode to catch bugs, bad patterns, and incomplete implementations before merging.
 
 ---
 
@@ -176,10 +180,11 @@ Available specs:
 Enter spec name (or number): 1
 
 Modes:
-  1. plan  - Analyze codebase and create implementation plan
-  2. build - Implement tasks from the plan
+  1. plan   - Analyze codebase and create implementation plan
+  2. build  - Implement tasks from the plan
+  3. review - Review implementation for bugs and issues
 
-Select mode [1/2 or plan/build] (default: build): plan
+Select mode [1/2/3 or plan/build/review] (default: build): plan
 Number of iterations (default: 5): 
 ```
 
@@ -187,17 +192,18 @@ Number of iterations (default: 5):
 
 ```bash
 node .ralph/run.js <spec-name> [mode] [iterations] [--verbose]
-node .ralph/run.js [--plan|--build] [--verbose]  # Interactive with mode pre-selected
+node .ralph/run.js [--plan|--build|--review] [--verbose]  # Interactive with mode pre-selected
 ```
 
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
-| `mode` | `plan` or `build` | `build` |
-| `iterations` | Number of loop iterations | 5 (plan) / 10 (build) |
+| `mode` | `plan`, `build`, or `review` | `build` |
+| `iterations` | Number of loop iterations | 5 (plan) / 10 (build/review) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 | `--plan` | Pre-select plan mode in interactive | — |
 | `--build` | Pre-select build mode in interactive | — |
+| `--review` | Pre-select review mode in interactive | — |
 | `--background` / `-b` | Run in background (Ralph clones repo) | Off |
 
 Examples:
@@ -206,8 +212,10 @@ Examples:
 node .ralph/run.js my-feature              # Build mode, 10 iterations, quiet
 node .ralph/run.js my-feature plan         # Plan mode, 5 iterations, quiet
 node .ralph/run.js my-feature build 20     # Build mode, 20 iterations, quiet
+node .ralph/run.js my-feature review       # Review mode, 10 iterations, quiet
 node .ralph/run.js my-feature --verbose    # Build mode with full output
 node .ralph/run.js my-feature plan -v      # Plan mode with full output
+node .ralph/run.js my-feature review -v    # Review mode with full output
 ```
 
 ### NPM Scripts
@@ -220,6 +228,7 @@ Add to your `package.json`:
     "ralph": "node .ralph/run.js",
     "ralph:plan": "node .ralph/run.js --plan",
     "ralph:build": "node .ralph/run.js --build",
+    "ralph:review": "node .ralph/run.js --review",
     "ralph:docker": "node .ralph/docker-build.js"
   }
 }
@@ -231,9 +240,11 @@ Then run:
 npm run ralph                              # Interactive mode
 npm run ralph:plan                         # Interactive with plan mode pre-selected
 npm run ralph:build                        # Interactive with build mode pre-selected
+npm run ralph:review                       # Interactive with review mode pre-selected
 npm run ralph -- my-feature                # Build mode (quiet)
 npm run ralph -- my-feature plan           # Plan mode (quiet)
 npm run ralph -- my-feature build 20       # Build with 20 iterations
+npm run ralph -- my-feature review         # Review mode (quiet)
 npm run ralph -- my-feature --verbose      # Build with full output
 npm run ralph -- my-feature plan -v        # Plan with full output
 ```
@@ -273,6 +284,29 @@ node .ralph/run.js <spec-name> [build] [iterations]
 
 **When to use**: After you've reviewed and approved the plan.
 
+### Review Mode
+
+```bash
+node .ralph/run.js <spec-name> review [iterations]
+```
+
+| What it does | What it outputs |
+|--------------|-----------------|
+| ✅ Creates `review_checklist.md` (setup phase) | 📄 `review_checklist.md` - tracking document |
+| ✅ Reviews one item per iteration | 📄 `review.md` - comprehensive findings |
+| ✅ Compares implementation against spec | |
+| ✅ Detects bugs, bad patterns, security issues | |
+| ✅ Logs issues with file paths and line numbers | |
+
+**When to use**: After build mode, before merging. Review findings feed back into plan mode.
+
+**Workflow integration**:
+```
+Plan → Build → Review → Plan (with fixes) → Build (fixes) → ...
+```
+
+When you run plan mode after a review, it automatically creates "Phase 0: Review Fixes" with critical and important issues to address first.
+
 ---
 
 ## File Structure
@@ -282,6 +316,8 @@ node .ralph/run.js <spec-name> [build] [iterations]
 ├── .env                   # API keys (create from .env.example)
 ├── AGENTS.md              # Build commands, patterns, rules
 ├── implementation_plan.md # Task checklist (auto-managed)
+├── review_checklist.md    # Review tracking (created by review mode)
+├── review.md              # Review findings (created by review mode)
 ├── specs/
 │   ├── sample.md          # Template for new specs
 │   ├── my-feature.md      # Your feature specs
@@ -289,6 +325,8 @@ node .ralph/run.js <spec-name> [build] [iterations]
 ├── prompts/
 │   ├── plan.md            # Plan mode instructions
 │   ├── build.md           # Build mode instructions
+│   ├── review_setup.md    # Review mode setup (single-shot)
+│   ├── review.md          # Review mode loop instructions
 │   └── requirements.md    # Template for gathering requirements
 ├── run.js                 # Entry point (Node.js)
 ├── setup.js               # Interactive setup wizard
@@ -379,6 +417,8 @@ A living checklist that Ralph updates:
 |-----|-----|
 | 🎯 **Start with plan mode** | Creates a solid task list before coding |
 | 👀 **Review the plan** | Catch misunderstandings before build phase |
+| 🔍 **Run review after build** | Catches bugs, bad patterns before merging |
+| 🔄 **Use the full loop** | Plan → Build → Review → Plan (fixes) → Build |
 | 📝 **Keep AGENTS.md minimal** | Large files waste context tokens |
 | 📖 **Write detailed specs** | More context = better implementation |
 | 👁️ **Monitor iterations** | Catch issues before they compound |
