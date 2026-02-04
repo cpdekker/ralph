@@ -329,6 +329,32 @@ Plan → Build → Review → Plan (with fixes) → Build (fixes) → ...
 
 When you run plan mode after a review, it automatically creates "Phase 0: Review Fixes" with critical and important issues to address first.
 
+### User Review Notes
+
+After manually testing Ralph's work, add your feedback to `.ralph/user-review.md`:
+
+```markdown
+## 🐛 Bugs Found
+- Login button doesn't work on mobile
+- Form validation message is cut off
+
+## ❌ Implementation Issues  
+- The date picker should use UTC, not local time
+- API response format doesn't match the spec
+
+## 🎯 Focus Areas for Next Iteration
+- Prioritize fixing the authentication flow
+- Don't touch the dashboard yet
+```
+
+Then run **1-3 plan iterations** to have Ralph research and formalize your notes into the implementation plan. Your notes become "Phase 0: User Review Fixes" — the highest priority items.
+
+| Priority | Source | Phase in Plan |
+|----------|--------|---------------|
+| 🥇 Highest | `user-review.md` (your notes) | Phase 0: User Review Fixes |
+| 🥈 High | `review.md` (automated review) | Phase 0.5: Review Fixes |
+| 🥉 Normal | Spec requirements | Phase 1+ |
+
 ### Full Mode
 
 ```bash
@@ -371,6 +397,7 @@ FULL_PLAN_ITERS=3 FULL_BUILD_ITERS=15 FULL_REVIEW_ITERS=3 node .ralph/run.js my-
 ├── .env                   # API keys (create from .env.example)
 ├── AGENTS.md              # Build commands, patterns, rules
 ├── implementation_plan.md # Task checklist (auto-managed)
+├── user-review.md         # YOUR manual review notes (highest priority in plan mode)
 ├── review_checklist.md    # Review tracking (created by review mode)
 ├── review.md              # Review findings (created by review mode)
 ├── specs/
