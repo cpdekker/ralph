@@ -48,6 +48,11 @@ The loop will start a fresh turn for the next item.
 - **Spec inconsistencies**: If you find issues in `.ralph/specs/active.md`, use an Opus subagent to fix them.
 - **Tagging**: When there are no build/test errors, create a git tag (increment patch from last tag, or start at 0.0.1).
 
+## Critical Rules
+
+- **NEVER modify `.ralph/specs/active.md`** — The spec is the source of truth and must remain unchanged across all iterations
+- **NEVER modify `.ralph/specs/*.md`** — All spec files are read-only during build
+
 ## Remember
 
 This is an iterative loop. You handle ONE item per turn. The loop will call you again for the next item. **Stop after your commit and push.**

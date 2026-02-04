@@ -1,11 +1,18 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|full] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
 #   ./loop.sh my-feature build 20           # Build mode, 20 iterations, quiet
 #   ./loop.sh my-feature review             # Review mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan 10 --verbose  # Plan mode, 10 iterations, verbose
+#   ./loop.sh my-feature full               # Full mode: plan→build→review→check cycles
+#   ./loop.sh my-feature full 100           # Full mode with max 100 total iterations
+#
+# Full mode options (via environment variables):
+#   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
+#   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
+#   FULL_REVIEW_ITERS=5     # Review iterations per cycle (default: 5)
 
 # Parse arguments
 SPEC_NAME=""
@@ -18,7 +25,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "full" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -54,6 +61,12 @@ elif [ "$MODE" = "review" ]; then
     SETUP_PROMPT_FILE="./.ralph/prompts/review_setup.md"
     PROMPT_FILE="./.ralph/prompts/review.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+elif [ "$MODE" = "full" ]; then
+    # Full mode: cycles of plan → build → review → completion check
+    MAX_ITERATIONS=${MAX_ITERATIONS:-100}
+    FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-5}
+    FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
+    FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-5}
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
@@ -90,22 +103,50 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
-[ -n "$SETUP_PROMPT_FILE" ] && echo "Setup:   $SETUP_PROMPT_FILE"
-echo "Prompt:  $PROMPT_FILE"
+if [ "$MODE" = "full" ]; then
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → check"
+    [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
+else
+    [ -n "$SETUP_PROMPT_FILE" ] && echo "Setup:   $SETUP_PROMPT_FILE"
+    echo "Prompt:  $PROMPT_FILE"
+    [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS iterations"
+fi
 echo "Branch:  $CURRENT_BRANCH"
 echo "Verbose: $VERBOSE"
-[ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS iterations"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Verify prompt file(s) exist
-if [ ! -f "$PROMPT_FILE" ]; then
-    echo "Error: $PROMPT_FILE not found"
-    exit 1
-fi
+if [ "$MODE" = "full" ]; then
+    # Full mode uses multiple prompt files
+    for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review_setup.md" "./.ralph/prompts/completion_check.md"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for full mode)"
+            exit 1
+        fi
+    done
+    # Check for at least one review prompt (specialist or generic)
+    if [ ! -f "./.ralph/prompts/review_qa.md" ] && [ ! -f "./.ralph/prompts/review.md" ]; then
+        echo "Error: No review prompt found (need review_qa.md or review.md)"
+        exit 1
+    fi
+    # Show which specialist prompts are available
+    echo ""
+    echo "Review specialists available:"
+    [ -f "./.ralph/prompts/review_ux.md" ] && echo -e "  \033[1;35m✓\033[0m UX Expert (review_ux.md)"
+    [ -f "./.ralph/prompts/review_db.md" ] && echo -e "  \033[1;36m✓\033[0m DB Expert (review_db.md)"
+    [ -f "./.ralph/prompts/review_qa.md" ] && echo -e "  \033[1;33m✓\033[0m QA Expert (review_qa.md)"
+    [ -f "./.ralph/prompts/review.md" ] && echo -e "  \033[1;37m✓\033[0m General (review.md - fallback)"
+    echo ""
+else
+    if [ ! -f "$PROMPT_FILE" ]; then
+        echo "Error: $PROMPT_FILE not found"
+        exit 1
+    fi
 
-if [ -n "$SETUP_PROMPT_FILE" ] && [ ! -f "$SETUP_PROMPT_FILE" ]; then
-    echo "Error: $SETUP_PROMPT_FILE not found"
-    exit 1
+    if [ -n "$SETUP_PROMPT_FILE" ] && [ ! -f "$SETUP_PROMPT_FILE" ]; then
+        echo "Error: $SETUP_PROMPT_FILE not found"
+        exit 1
+    fi
 fi
 
 # Verify Claude CLI authentication before starting
@@ -452,6 +493,392 @@ generate_summary() {
     echo ""
 }
 
+# Helper function to run a single iteration with a given prompt
+run_single_iteration() {
+    local prompt_file=$1
+    local iteration_num=$2
+    local phase_name=$3
+    
+    TURN_START_TIME=$(date +%s)
+    
+    # Display turn banner
+    print_turn_banner $iteration_num
+    echo -e "  \033[1;35mPhase:\033[0m $phase_name"
+    echo ""
+    
+    # Prepare log file for this iteration
+    LOG_FILE="$TEMP_DIR/iteration_${iteration_num}.log"
+    
+    if [ "$VERBOSE" = true ]; then
+        cat "$prompt_file" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose 2>&1 | tee "$LOG_FILE"
+        CLAUDE_EXIT=${PIPESTATUS[1]}
+        
+        if [ $CLAUDE_EXIT -ne 0 ]; then
+            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+            echo "  Check log: $LOG_FILE"
+            return 1
+        fi
+    else
+        echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $iteration_num..."
+        echo ""
+        
+        cat "$prompt_file" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$LOG_FILE" 2>&1 &
+        
+        CLAUDE_PID=$!
+        spin $CLAUDE_PID
+        wait $CLAUDE_PID
+        CLAUDE_EXIT=$?
+        
+        if [ $CLAUDE_EXIT -ne 0 ]; then
+            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+            echo "  Check log: $LOG_FILE"
+            return 1
+        else
+            echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+        fi
+    fi
+    
+    # Generate and display summary
+    generate_summary "$LOG_FILE" "$iteration_num" "$TURN_START_TIME"
+    
+    # Push changes after each iteration
+    git push origin "$CURRENT_BRANCH" || {
+        echo "Failed to push. Creating remote branch..."
+        git push -u origin "$CURRENT_BRANCH"
+    }
+    
+    return 0
+}
+
+# Helper function to determine which review specialist to use
+# Returns: ux, db, or qa
+get_next_review_specialist() {
+    local checklist_file="./.ralph/review_checklist.md"
+    
+    if [ ! -f "$checklist_file" ]; then
+        echo "qa"
+        return
+    fi
+    
+    # Find the first unchecked item and check its tag
+    local next_item=$(grep -m1 '^\- \[ \]' "$checklist_file" 2>/dev/null || echo "")
+    
+    if echo "$next_item" | grep -qi '\[UX\]'; then
+        echo "ux"
+    elif echo "$next_item" | grep -qi '\[DB\]'; then
+        echo "db"
+    else
+        echo "qa"
+    fi
+}
+
+# Helper function to run completion check
+run_completion_check() {
+    echo ""
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;33m  🔍 COMPLETION CHECK - Is the spec fully implemented?\033[0m"
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+    
+    local check_log="$TEMP_DIR/completion_check.log"
+    local check_result
+    
+    if [ "$VERBOSE" = true ]; then
+        check_result=$(cat "./.ralph/prompts/completion_check.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>&1 | tee "$check_log")
+    else
+        echo -e "  \033[1;36m⏳\033[0m Checking if implementation is complete..."
+        
+        check_result=$(cat "./.ralph/prompts/completion_check.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>"$check_log")
+    fi
+    
+    # Extract the result text from Claude's JSON response
+    local result_text=$(echo "$check_result" | grep -o '"result"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"result"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
+    
+    # If we couldn't extract from result field, try to find JSON in the response
+    if [ -z "$result_text" ]; then
+        result_text="$check_result"
+    fi
+    
+    # Check if the response indicates completion
+    if echo "$result_text" | grep -qi '"complete"[[:space:]]*:[[:space:]]*true'; then
+        local reason=$(echo "$result_text" | grep -o '"reason"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"reason"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
+        echo ""
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        echo -e "\033[1;32m  ✅ IMPLEMENTATION COMPLETE!\033[0m"
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo ""
+        return 0  # Complete
+    else
+        local reason=$(echo "$result_text" | grep -o '"reason"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"reason"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
+        echo ""
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        echo -e "\033[1;33m  ⚠ Implementation not yet complete\033[0m"
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo ""
+        return 1  # Not complete
+    fi
+}
+
+# Print cycle banner
+print_cycle_banner() {
+    local cycle_num=$1
+    echo ""
+    echo ""
+    echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
+    echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
+    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → check            ║\033[0m"
+    echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+}
+
+# Print phase banner
+print_phase_banner() {
+    local phase_name=$1
+    local phase_iters=$2
+    echo ""
+    echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
+    echo -e "\033[1;36m│  $phase_name PHASE ($phase_iters iterations)                       \033[0m"
+    echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FULL MODE - Runs plan → build → review → check cycles
+# In full mode, MAX_ITERATIONS is treated as MAX_CYCLES (number of complete cycles)
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ "$MODE" = "full" ]; then
+    TOTAL_ITERATIONS=0
+    CYCLE=0
+    MAX_CYCLES=$MAX_ITERATIONS  # Rename for clarity - in full mode, this is cycles not iterations
+    IMPLEMENTATION_COMPLETE=false
+    
+    while [ "$IMPLEMENTATION_COMPLETE" = false ]; do
+        CYCLE=$((CYCLE + 1))
+        
+        # Check max cycles at the start of each cycle
+        if [ $CYCLE -gt $MAX_CYCLES ]; then
+            echo -e "\033[1;33mReached max cycles: $MAX_CYCLES\033[0m"
+            break
+        fi
+        
+        print_cycle_banner $CYCLE
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # PLAN PHASE
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "PLAN" $FULL_PLAN_ITERS
+        
+        PLAN_ITERATION=0
+        PHASE_ERROR=false
+        while [ $PLAN_ITERATION -lt $FULL_PLAN_ITERS ]; do
+            PLAN_ITERATION=$((PLAN_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            
+            if ! run_single_iteration "./.ralph/prompts/plan.md" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$FULL_PLAN_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
+                PHASE_ERROR=true
+                break
+            fi
+            
+            # Show progress
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+                echo -e "  \033[1;34mℹ\033[0m  Implementation plan has $UNCHECKED_COUNT items"
+            fi
+        done
+        
+        # Exit full mode on error
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+        
+        echo -e "  \033[1;32m✓\033[0m Plan phase complete ($PLAN_ITERATION iterations)"
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # BUILD PHASE
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "BUILD" $FULL_BUILD_ITERS
+        
+        BUILD_ITERATION=0
+        PHASE_ERROR=false
+        while [ $BUILD_ITERATION -lt $FULL_BUILD_ITERS ]; do
+            BUILD_ITERATION=$((BUILD_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            
+            # Check if build is complete before running
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+                if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                    echo -e "  \033[1;32m✓\033[0m All build tasks complete!"
+                    break
+                fi
+                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT unchecked items remaining"
+            fi
+            
+            if ! run_single_iteration "./.ralph/prompts/build.md" $TOTAL_ITERATIONS "BUILD ($BUILD_ITERATION/$FULL_BUILD_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
+                PHASE_ERROR=true
+                break
+            fi
+        done
+        
+        # Exit full mode on error
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+        
+        echo -e "  \033[1;32m✓\033[0m Build phase complete"
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # REVIEW PHASE (with setup on first iteration of each cycle)
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "REVIEW" $FULL_REVIEW_ITERS
+        
+        # Run review setup
+        echo -e "  \033[1;35m⚙\033[0m  Running review setup..."
+        SETUP_LOG_FILE="$TEMP_DIR/review_setup_cycle_${CYCLE}.log"
+        
+        if [ "$VERBOSE" = true ]; then
+            cat "./.ralph/prompts/review_setup.md" | claude -p \
+                --dangerously-skip-permissions \
+                --output-format=stream-json \
+                --verbose 2>&1 | tee "$SETUP_LOG_FILE"
+        else
+            cat "./.ralph/prompts/review_setup.md" | claude -p \
+                --dangerously-skip-permissions \
+                --output-format=stream-json \
+                --verbose > "$SETUP_LOG_FILE" 2>&1 &
+            
+            SETUP_PID=$!
+            spin $SETUP_PID
+            wait $SETUP_PID
+        fi
+        
+        git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
+        echo -e "  \033[1;32m✓\033[0m Review setup complete"
+        echo ""
+        
+        REVIEW_ITERATION=0
+        PHASE_ERROR=false
+        while [ $REVIEW_ITERATION -lt $FULL_REVIEW_ITERS ]; do
+            REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            
+            # Check if review is complete before running
+            CHECKLIST_FILE="./.ralph/review_checklist.md"
+            if [ -f "$CHECKLIST_FILE" ]; then
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                    echo -e "  \033[1;32m✓\033[0m All review items complete!"
+                    break
+                fi
+                
+                # Count items by specialist type
+                UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                QA_COUNT=$((UNCHECKED_COUNT - UX_COUNT - DB_COUNT))
+                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+            fi
+            
+            # Determine which specialist should handle the next item
+            SPECIALIST=$(get_next_review_specialist)
+            case $SPECIALIST in
+                ux)
+                    REVIEW_PROMPT="./.ralph/prompts/review_ux.md"
+                    SPECIALIST_NAME="UX"
+                    SPECIALIST_COLOR="\033[1;35m"  # Magenta
+                    ;;
+                db)
+                    REVIEW_PROMPT="./.ralph/prompts/review_db.md"
+                    SPECIALIST_NAME="DB"
+                    SPECIALIST_COLOR="\033[1;36m"  # Cyan
+                    ;;
+                *)
+                    REVIEW_PROMPT="./.ralph/prompts/review_qa.md"
+                    SPECIALIST_NAME="QA"
+                    SPECIALIST_COLOR="\033[1;33m"  # Yellow
+                    ;;
+            esac
+            
+            # Fallback to generic review.md if specialist prompt doesn't exist
+            if [ ! -f "$REVIEW_PROMPT" ]; then
+                REVIEW_PROMPT="./.ralph/prompts/review.md"
+                SPECIALIST_NAME="General"
+                SPECIALIST_COLOR="\033[1;37m"
+            fi
+            
+            echo -e "  ${SPECIALIST_COLOR}🔍 Specialist: $SPECIALIST_NAME\033[0m"
+            
+            if ! run_single_iteration "$REVIEW_PROMPT" $TOTAL_ITERATIONS "REVIEW-$SPECIALIST_NAME ($REVIEW_ITERATION/$FULL_REVIEW_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
+                PHASE_ERROR=true
+                break
+            fi
+        done
+        
+        # Exit full mode on error
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+        
+        echo -e "  \033[1;32m✓\033[0m Review phase complete"
+        
+        # ─────────────────────────────────────────────────────────────────────
+        # COMPLETION CHECK
+        # ─────────────────────────────────────────────────────────────────────
+        if run_completion_check; then
+            IMPLEMENTATION_COMPLETE=true
+        else
+            echo -e "  \033[1;35m→\033[0m Starting next cycle..."
+        fi
+    done
+    
+    # Calculate final total elapsed time
+    FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+    FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+    
+    echo ""
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    if [ "$IMPLEMENTATION_COMPLETE" = true ]; then
+        echo -e "\033[1;32m  🎉 Ralph completed spec in $CYCLE cycle(s), $TOTAL_ITERATIONS iteration(s)\033[0m"
+    else
+        echo -e "\033[1;33m  ⚠ Ralph stopped after $CYCLE cycle(s), $TOTAL_ITERATIONS iteration(s)\033[0m"
+    fi
+    echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo ""
+    
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STANDARD MODE - Runs single mode (plan, build, or review)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 while true; do
     ITERATION=$((ITERATION + 1))
     TURN_START_TIME=$(date +%s)
@@ -488,7 +915,35 @@ while true; do
                 echo ""
                 break
             fi
-            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining to review"
+            
+            # Count items by specialist type
+            UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            QA_COUNT=$((UNCHECKED_COUNT - UX_COUNT - DB_COUNT))
+            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+            
+            # Determine which specialist should handle the next item
+            SPECIALIST=$(get_next_review_specialist)
+            case $SPECIALIST in
+                ux)
+                    PROMPT_FILE="./.ralph/prompts/review_ux.md"
+                    echo -e "  \033[1;35m🔍 Specialist: UX Expert\033[0m"
+                    ;;
+                db)
+                    PROMPT_FILE="./.ralph/prompts/review_db.md"
+                    echo -e "  \033[1;36m🔍 Specialist: DB Expert\033[0m"
+                    ;;
+                *)
+                    PROMPT_FILE="./.ralph/prompts/review_qa.md"
+                    echo -e "  \033[1;33m🔍 Specialist: QA Expert\033[0m"
+                    ;;
+            esac
+            
+            # Fallback to generic review.md if specialist prompt doesn't exist
+            if [ ! -f "$PROMPT_FILE" ]; then
+                PROMPT_FILE="./.ralph/prompts/review.md"
+                echo -e "  \033[1;37m🔍 Specialist: General\033[0m"
+            fi
         else
             echo -e "  \033[1;31m✗\033[0m  Review checklist not found. Run setup first."
             break

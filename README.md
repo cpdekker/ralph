@@ -16,6 +16,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
   - [Plan Mode](#plan-mode)
   - [Build Mode](#build-mode)
   - [Review Mode](#review-mode)
+  - [Full Mode](#full-mode)
 - [File Structure](#file-structure)
 - [Branch Strategy](#branch-strategy)
 - [Active Spec Pattern](#active-spec-pattern)
@@ -150,6 +151,7 @@ node .ralph/run.js
 node .ralph/run.js my-feature plan    # Plan first
 node .ralph/run.js my-feature build   # Then build
 node .ralph/run.js my-feature review  # Review the implementation
+node .ralph/run.js my-feature full    # Full autonomous cycle
 ```
 
 > ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
@@ -183,8 +185,9 @@ Modes:
   1. plan   - Analyze codebase and create implementation plan
   2. build  - Implement tasks from the plan
   3. review - Review implementation for bugs and issues
+  4. full   - Full cycle: plan → build → review → check (repeats until complete)
 
-Select mode [1/2/3 or plan/build/review] (default: build): plan
+Select mode [1/2/3/4 or plan/build/review/full] (default: build): plan
 Number of iterations (default: 5): 
 ```
 
@@ -192,19 +195,21 @@ Number of iterations (default: 5):
 
 ```bash
 node .ralph/run.js <spec-name> [mode] [iterations] [--verbose]
-node .ralph/run.js [--plan|--build|--review] [--verbose]  # Interactive with mode pre-selected
+node .ralph/run.js [--plan|--build|--review|--full] [--verbose]  # Interactive with mode pre-selected
 ```
 
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
-| `mode` | `plan`, `build`, or `review` | `build` |
-| `iterations` | Number of loop iterations | 5 (plan) / 10 (build/review) |
+| `mode` | `plan`, `build`, `review`, or `full` | `build` |
+| `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 | `--plan` | Pre-select plan mode in interactive | — |
 | `--build` | Pre-select build mode in interactive | — |
 | `--review` | Pre-select review mode in interactive | — |
-| `--background` / `-b` | Run in background (Ralph clones repo) | Off |
+| `--full` / `--yolo` | Pre-select full mode in interactive | — |
+| `--background` / `-b` | Run in background (Ralph clones repo) | Off (On for full mode) |
+| `--foreground` / `-f` / `--no-background` | Force foreground mode | — |
 
 Examples:
 
@@ -213,9 +218,12 @@ node .ralph/run.js my-feature              # Build mode, 10 iterations, quiet
 node .ralph/run.js my-feature plan         # Plan mode, 5 iterations, quiet
 node .ralph/run.js my-feature build 20     # Build mode, 20 iterations, quiet
 node .ralph/run.js my-feature review       # Review mode, 10 iterations, quiet
+node .ralph/run.js my-feature full         # Full mode, 10 max cycles
+node .ralph/run.js my-feature full 20      # Full mode, 20 max cycles
 node .ralph/run.js my-feature --verbose    # Build mode with full output
 node .ralph/run.js my-feature plan -v      # Plan mode with full output
 node .ralph/run.js my-feature review -v    # Review mode with full output
+node .ralph/run.js my-feature full -v      # Full mode with full output
 ```
 
 ### NPM Scripts
@@ -229,6 +237,8 @@ Add to your `package.json`:
     "ralph:plan": "node .ralph/run.js --plan",
     "ralph:build": "node .ralph/run.js --build",
     "ralph:review": "node .ralph/run.js --review",
+    "ralph:full": "node .ralph/run.js --full",
+    "ralph:yolo": "node .ralph/run.js --full",
     "ralph:docker": "node .ralph/docker-build.js"
   }
 }
@@ -241,10 +251,13 @@ npm run ralph                              # Interactive mode
 npm run ralph:plan                         # Interactive with plan mode pre-selected
 npm run ralph:build                        # Interactive with build mode pre-selected
 npm run ralph:review                       # Interactive with review mode pre-selected
+npm run ralph:full                         # Interactive with full mode pre-selected
 npm run ralph -- my-feature                # Build mode (quiet)
 npm run ralph -- my-feature plan           # Plan mode (quiet)
 npm run ralph -- my-feature build 20       # Build with 20 iterations
 npm run ralph -- my-feature review         # Review mode (quiet)
+npm run ralph -- my-feature full           # Full autonomous cycle (10 max cycles)
+npm run ralph -- my-feature full 20        # Full mode with 20 max cycles
 npm run ralph -- my-feature --verbose      # Build with full output
 npm run ralph -- my-feature plan -v        # Plan with full output
 ```
@@ -297,6 +310,15 @@ node .ralph/run.js <spec-name> review [iterations]
 | ✅ Compares implementation against spec | |
 | ✅ Detects bugs, bad patterns, security issues | |
 | ✅ Logs issues with file paths and line numbers | |
+| ✅ **Routes to specialist reviewers** based on file type | |
+
+**Specialist Reviewers**: Items are automatically routed to the right expert:
+
+| Specialist | Tag | Focus Areas |
+|------------|-----|-------------|
+| 🎨 **UX Expert** | `[UX]` | React/Vue components, CSS, accessibility, responsive design, UI interactions |
+| 🗄️ **DB Expert** | `[DB]` | SQL queries, migrations, data models, query performance, data integrity |
+| 🔍 **QA Expert** | `[QA]` | Business logic, API endpoints, error handling, testing, security |
 
 **When to use**: After build mode, before merging. Review findings feed back into plan mode.
 
@@ -306,6 +328,39 @@ Plan → Build → Review → Plan (with fixes) → Build (fixes) → ...
 ```
 
 When you run plan mode after a review, it automatically creates "Phase 0: Review Fixes" with critical and important issues to address first.
+
+### Full Mode
+
+```bash
+node .ralph/run.js <spec-name> full [max-iterations]
+```
+
+| What it does |
+|--------------|
+| ✅ Runs complete cycles: Plan → Build → Review → Check |
+| ✅ Automatically checks if implementation is complete after each cycle |
+| ✅ Exits early when spec is fully implemented |
+| ✅ Continues until complete or max iterations reached |
+| ✅ **Runs in background by default** (use `--foreground` to override) |
+
+**Default iterations per cycle**:
+| Phase | Default | Environment Variable |
+|-------|---------|---------------------|
+| Plan | 5 | `FULL_PLAN_ITERS` |
+| Build | 10 | `FULL_BUILD_ITERS` |
+| Review | 5 | `FULL_REVIEW_ITERS` |
+
+**Customize cycle iterations**:
+```bash
+# Run with custom phase iterations
+FULL_PLAN_ITERS=3 FULL_BUILD_ITERS=15 FULL_REVIEW_ITERS=3 node .ralph/run.js my-feature full
+```
+
+**When to use**: When you want fully autonomous implementation with minimal supervision. Ralph will plan, build, review, and repeat until the spec is complete or max iterations are reached.
+
+> ⚠️ **Full mode is powerful**: Each cycle runs ~20 Claude iterations (5 plan + 10 build + 5 review). Set appropriate max cycles (default: 10) to control total runtime.
+
+> 💡 **Best for**: Well-defined specs where you trust the implementation plan. Review the spec carefully before starting.
 
 ---
 
@@ -325,8 +380,12 @@ When you run plan mode after a review, it automatically creates "Phase 0: Review
 ├── prompts/
 │   ├── plan.md            # Plan mode instructions
 │   ├── build.md           # Build mode instructions
-│   ├── review_setup.md    # Review mode setup (single-shot)
-│   ├── review.md          # Review mode loop instructions
+│   ├── review_setup.md    # Review mode setup (tags items by specialist)
+│   ├── review.md          # General review fallback
+│   ├── review_ux.md       # UX/Frontend specialist review
+│   ├── review_db.md       # Database specialist review
+│   ├── review_qa.md       # QA specialist review (default)
+│   ├── completion_check.md # Full mode completion check
 │   └── requirements.md    # Template for gathering requirements
 ├── run.js                 # Entry point (Node.js)
 ├── setup.js               # Interactive setup wizard

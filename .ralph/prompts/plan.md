@@ -103,6 +103,11 @@ Priority fixes from code review findings. Address these FIRST.
 
 ---
 
+## Critical Rules
+
+- **NEVER modify `.ralph/specs/active.md`** — The spec is the source of truth and must remain unchanged across all iterations
+- **NEVER modify `.ralph/specs/*.md`** — All spec files are read-only during planning
+
 ## Commit and Push
 
 After updating the plan:

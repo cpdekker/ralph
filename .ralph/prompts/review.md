@@ -160,6 +160,11 @@ The loop will start a fresh turn for the next item.
 - **Reference spec**: Tie findings back to requirements when relevant
 - **Be constructive**: Provide actionable recommendations, not just criticism
 
+## Critical Rules
+
+- **NEVER modify `.ralph/specs/active.md`** — The spec is the source of truth and must remain unchanged across all iterations
+- **NEVER modify `.ralph/specs/*.md`** — All spec files are read-only during review
+
 ## Remember
 
 This is an iterative loop. You handle ONE review item per turn. The loop will call you again for the next item. **Stop after your commit and push.**
