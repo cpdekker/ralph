@@ -20,6 +20,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
   - [Debug Mode](#debug-mode)
   - [Full Mode](#full-mode)
   - [Decompose Mode](#decompose-mode)
+  - [Spec Mode](#spec-mode)
 - [Advanced Features](#advanced-features)
   - [Circuit Breaker](#circuit-breaker)
   - [Checkpointing](#checkpointing)
@@ -141,7 +142,13 @@ Update `.ralph/AGENTS.md` with your project's build commands, test commands, and
 
 ### 4. Create your spec
 
-Work with your AI agent to create a detailed specification. Save it to `.ralph/specs/my-feature.md`.
+**Option A — Interactive spec mode (recommended)**:
+```bash
+node .ralph/run.js my-feature spec
+```
+This runs a wizard to gather your requirements, then uses AI to research, draft, refine, and review the spec.
+
+**Option B — Manual**: Work with your AI agent to create a detailed specification. Save it to `.ralph/specs/my-feature.md`.
 A sample prompt template to work off of is defined in `.ralph/prompts/requirements.md`
 
 ### 5. Build the Docker image
@@ -164,6 +171,7 @@ node .ralph/run.js my-feature review-fix # Fix review findings
 node .ralph/run.js my-feature debug      # Debug mode (single iteration, no commit)
 node .ralph/run.js my-feature full       # Full autonomous cycle
 node .ralph/run.js my-feature decompose  # Break large spec into sub-specs
+node .ralph/run.js my-feature spec       # Create spec interactively
 ```
 
 > ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
@@ -201,8 +209,9 @@ Modes:
   5. debug      - Single iteration, verbose, no commits
   6. full       - Full cycle: plan → build → review → check (repeats until complete)
   7. decompose  - Break large spec into ordered sub-specs for full mode
+  8. spec       - Create spec interactively: gather → research → draft → review
 
-Select mode [1-7 or name] (default: build): plan
+Select mode [1-8 or name] (default: build): plan
 Number of iterations (default: 5): 
 ```
 
@@ -216,14 +225,15 @@ node .ralph/run.js [--plan|--build|--review|--full|--decompose] [--verbose]  # I
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
-| `mode` | `plan`, `build`, `review`, `review-fix`, `debug`, `full`, or `decompose` | `build` |
-| `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) / 1 (decompose) |
+| `mode` | `plan`, `build`, `review`, `review-fix`, `debug`, `full`, `decompose`, or `spec` | `build` |
+| `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) / 8 (spec) / 1 (decompose) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 | `--plan` | Pre-select plan mode in interactive | — |
 | `--build` | Pre-select build mode in interactive | — |
 | `--review` | Pre-select review mode in interactive | — |
 | `--full` / `--yolo` | Pre-select full mode in interactive | — |
 | `--decompose` | Pre-select decompose mode in interactive | — |
+| `--spec` | Pre-select spec mode in interactive | — |
 | `--background` / `-b` | Run in background (Ralph clones repo) | Off (On for full mode) |
 | `--foreground` / `-f` / `--no-background` | Force foreground mode | — |
 
@@ -239,6 +249,7 @@ node .ralph/run.js my-feature debug        # Debug mode (1 iteration, verbose, n
 node .ralph/run.js my-feature full         # Full mode, 10 max cycles
 node .ralph/run.js my-feature full 20      # Full mode, 20 max cycles
 node .ralph/run.js my-feature decompose    # Decompose large spec into sub-specs
+node .ralph/run.js my-feature spec         # Interactive spec creation
 node .ralph/run.js my-feature --verbose    # Build mode with full output
 ```
 
@@ -256,6 +267,7 @@ Add to your `package.json`:
     "ralph:full": "node .ralph/run.js --full",
     "ralph:yolo": "node .ralph/run.js --full",
     "ralph:decompose": "node .ralph/run.js --decompose",
+    "ralph:spec": "node .ralph/run.js --spec",
     "ralph:docker": "node .ralph/docker-build.js"
   }
 }
@@ -434,6 +446,54 @@ node .ralph/run.js my-feature decompose
 node .ralph/run.js my-feature full
 ```
 
+### Spec Mode
+
+```bash
+node .ralph/run.js my-feature spec
+```
+
+| What it does | What it creates |
+|--------------|-----------------|
+| ✅ Interactive wizard gathers requirements on host | 📄 `.ralph/spec_seed.md` — your input |
+| ✅ AI researches codebase and best practices | 📄 `.ralph/spec_research.md` — findings |
+| ✅ Generates full spec from sample.md template | 📄 `specs/{name}.md` — the spec |
+| ✅ Creates structured questions for clarification | 📄 `.ralph/spec_questions.md` — Q&A |
+| ✅ Refines spec with your answers and feedback | |
+| ✅ Reviews spec quality against rubric | 📄 `.ralph/spec_review.md` — assessment |
+| ✅ Fixes blocking issues automatically | |
+| ✅ Signs off when ready | 📄 `.ralph/spec_approved.md` — approval marker |
+
+**Flow**:
+```
+Wizard (host) → Research → Draft → Refine (1-3x) → Review → Fix → Sign-off
+```
+
+**Three-phase process**:
+
+1. **Gather** — Interactive wizard on your terminal collects: summary, requirements, preferences, constraints, reference URLs. Output: `spec_seed.md`
+2. **Draft** — AI researches the codebase, generates a full spec following `sample.md`, and creates questions for ambiguities. You can answer questions in `spec_questions.md` and add notes to `user-review.md` between iterations.
+3. **Review** — AI reviews the spec for completeness, consistency, and implementability. Fixes blocking issues. Signs off when ready.
+
+**File-based feedback**: Between refine iterations, edit these files to provide input:
+- `.ralph/spec_questions.md` — Fill in `A:` lines to answer questions
+- `.ralph/user-review.md` — Add freeform feedback, corrections, or focus areas
+
+**Resumable**: If you run spec mode again for the same feature, the wizard detects existing `spec_seed.md` and offers to skip it.
+
+```bash
+# Create a new spec interactively
+node .ralph/run.js my-feature spec
+
+# Answer questions in .ralph/spec_questions.md, then continue
+node .ralph/run.js my-feature spec
+
+# After approval, proceed to implementation
+node .ralph/run.js my-feature plan
+node .ralph/run.js my-feature full
+```
+
+**When to use**: When starting a new feature and you want AI-assisted spec creation with quality checks, instead of manually writing the spec.
+
 ---
 
 ## Advanced Features
@@ -551,6 +611,11 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 ├── review.md              # Review findings (created by review mode)
 ├── state.json             # Checkpoint state (auto-managed)
 ├── paused.md              # Created when circuit breaker trips
+├── spec_seed.md           # User input from spec wizard (created by spec mode)
+├── spec_research.md       # Codebase analysis (created by spec mode)
+├── spec_questions.md      # Questions for user (created by spec mode)
+├── spec_review.md         # Spec quality review (created by spec mode)
+├── spec_approved.md       # Approval marker (created by spec mode)
 ├── specs/
 │   ├── sample.md          # Template for new specs
 │   ├── my-feature.md      # Your feature specs
@@ -575,7 +640,13 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 │   ├── decompose.md       # Decompose mode - break spec into sub-specs
 │   ├── spec_select.md     # Sub-spec selection for decomposed full mode
 │   ├── master_completion_check.md # Final check across all sub-specs
-│   └── requirements.md    # Template for gathering requirements
+│   ├── requirements.md    # Template for gathering requirements
+│   ├── spec_research.md   # Spec mode: codebase research
+│   ├── spec_draft.md      # Spec mode: generate spec draft
+│   ├── spec_refine.md     # Spec mode: refine with feedback
+│   ├── spec_review.md     # Spec mode: quality review
+│   ├── spec_review_fix.md # Spec mode: fix review issues
+│   └── spec_signoff.md    # Spec mode: readiness check
 ├── run.js                 # Entry point (Node.js)
 ├── setup.js               # Interactive setup wizard
 ├── loop.sh                # Iteration loop (runs in Docker)

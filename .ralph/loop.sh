@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -11,6 +11,7 @@
 #   ./loop.sh my-feature full               # Full mode: plan→build→review→check cycles
 #   ./loop.sh my-feature full 100           # Full mode with max 100 total iterations
 #   ./loop.sh my-feature decompose          # Decompose large spec into sub-specs
+#   ./loop.sh my-feature spec               # Spec mode: research→draft→refine→review→signoff
 #
 # Full mode options (via environment variables):
 #   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
@@ -32,7 +33,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -42,26 +43,31 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]"
     exit 1
 fi
 
-# Verify spec file exists
+# Verify spec file exists (skip for spec mode — spec doesn't exist yet)
 SPEC_FILE="./.ralph/specs/${SPEC_NAME}.md"
-if [ ! -f "$SPEC_FILE" ]; then
-    echo "Error: Spec file not found: $SPEC_FILE"
-    echo "Available specs:"
-    ls -1 ./.ralph/specs/*.md 2>/dev/null | grep -v active.md | xargs -I {} basename {} .md | sed 's/^/  - /'
-    exit 1
-fi
+if [ "$MODE" != "spec" ]; then
+    if [ ! -f "$SPEC_FILE" ]; then
+        echo "Error: Spec file not found: $SPEC_FILE"
+        echo "Available specs:"
+        ls -1 ./.ralph/specs/*.md 2>/dev/null | grep -v active.md | xargs -I {} basename {} .md | sed 's/^/  - /'
+        exit 1
+    fi
 
-# Copy spec to active.md (skip for decomposed specs in full mode — spec_select handles it)
-ACTIVE_SPEC="./.ralph/specs/active.md"
-if [ "$MODE" = "full" ] && [ -f "./.ralph/specs/${SPEC_NAME}/manifest.json" ]; then
-    echo "Decomposed spec detected — spec_select will manage active.md"
+    # Copy spec to active.md (skip for decomposed specs in full mode — spec_select handles it)
+    ACTIVE_SPEC="./.ralph/specs/active.md"
+    if [ "$MODE" = "full" ] && [ -f "./.ralph/specs/${SPEC_NAME}/manifest.json" ]; then
+        echo "Decomposed spec detected — spec_select will manage active.md"
+    else
+        echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
+        cp "$SPEC_FILE" "$ACTIVE_SPEC"
+    fi
 else
-    echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
-    cp "$SPEC_FILE" "$ACTIVE_SPEC"
+    ACTIVE_SPEC="./.ralph/specs/active.md"
+    echo "Spec mode — spec will be created during the draft phase"
 fi
 
 # Circuit breaker settings
@@ -93,6 +99,14 @@ elif [ "$MODE" = "decompose" ]; then
     PROMPT_FILE="./.ralph/prompts/decompose.md"
     MAX_ITERATIONS=1
     VERBOSE=true
+elif [ "$MODE" = "spec" ]; then
+    # Spec mode: research → draft → refine → review → review-fix → signoff
+    MAX_ITERATIONS=${MAX_ITERATIONS:-8}
+    SPEC_RESEARCH_ITERS=1
+    SPEC_DRAFT_ITERS=1
+    SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
+    SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
+    SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
 elif [ "$MODE" = "full" ]; then
     # Full mode: cycles of plan → build → review → completion check
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
@@ -136,7 +150,9 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
-if [ "$MODE" = "decompose" ]; then
+if [ "$MODE" = "spec" ]; then
+    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
     echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
@@ -154,7 +170,20 @@ echo "Circuit Breaker: $MAX_CONSECUTIVE_FAILURES consecutive failures"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Verify prompt file(s) exist
-if [ "$MODE" = "full" ]; then
+if [ "$MODE" = "spec" ]; then
+    # Spec mode uses its own set of prompt files
+    for pf in "./.ralph/prompts/spec_research.md" "./.ralph/prompts/spec_draft.md" "./.ralph/prompts/spec_refine.md" "./.ralph/prompts/spec_review.md" "./.ralph/prompts/spec_review_fix.md" "./.ralph/prompts/spec_signoff.md"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for spec mode)"
+            exit 1
+        fi
+    done
+    # Verify spec_seed.md exists
+    if [ ! -f "./.ralph/spec_seed.md" ]; then
+        echo "Error: .ralph/spec_seed.md not found. Run the spec wizard first (node .ralph/run.js <name> spec)"
+        exit 1
+    fi
+elif [ "$MODE" = "full" ]; then
     # Full mode uses multiple prompt files
     for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review_setup.md" "./.ralph/prompts/completion_check.md"; do
         if [ ! -f "$pf" ]; then
@@ -1030,6 +1059,266 @@ run_master_completion_check() {
         return 1  # Not complete
     fi
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SPEC MODE - Creates specs: research → draft → refine → review → fix → signoff
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Helper function to run spec signoff check
+run_spec_signoff_check() {
+    echo ""
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;33m  🔍 SPEC SIGN-OFF CHECK - Is the spec ready for implementation?\033[0m"
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+
+    local check_log="$TEMP_DIR/spec_signoff.log"
+    local check_result
+
+    if [ "$VERBOSE" = true ]; then
+        check_result=$(cat "./.ralph/prompts/spec_signoff.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>&1 | tee "$check_log")
+    else
+        echo -e "  \033[1;36m⏳\033[0m Checking if spec is ready for implementation..."
+
+        check_result=$(cat "./.ralph/prompts/spec_signoff.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>"$check_log")
+    fi
+
+    # Parse Claude's JSON response using jq
+    local json_text
+    json_text=$(echo "$check_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$check_result"
+    fi
+
+    local is_ready=$(echo "$json_text" | jq -r '.ready // false' 2>/dev/null)
+    local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
+    local recommendation=$(echo "$json_text" | jq -r '.recommendation // empty' 2>/dev/null)
+    local sections_complete=$(echo "$json_text" | jq -r '.sections_complete // empty' 2>/dev/null)
+    local sections_total=$(echo "$json_text" | jq -r '.sections_total // empty' 2>/dev/null)
+    local blocking=$(echo "$json_text" | jq -r '.blocking_issues // empty' 2>/dev/null)
+    local unanswered=$(echo "$json_text" | jq -r '.unanswered_questions // empty' 2>/dev/null)
+
+    if [ "$is_ready" = "true" ]; then
+        echo ""
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        echo -e "\033[1;32m  ✅ SPEC APPROVED!\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
+        [ -n "$sections_complete" ] && [ -n "$sections_total" ] && echo -e "\033[1;32m  Sections: ${sections_complete}/${sections_total}\033[0m"
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        [ -n "$recommendation" ] && echo -e "  \033[1;36m$recommendation\033[0m"
+        echo ""
+        return 0  # Ready
+    else
+        echo ""
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        echo -e "\033[1;33m  ⚠ Spec not yet ready for implementation\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
+        [ -n "$blocking" ] && echo -e "\033[1;33m  Blocking issues: ${blocking}\033[0m"
+        [ -n "$unanswered" ] && echo -e "\033[1;33m  Unanswered questions: ${unanswered}\033[0m"
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        [ -n "$recommendation" ] && echo -e "  \033[1;36m$recommendation\033[0m"
+        echo ""
+        return 1  # Not ready
+    fi
+}
+
+if [ "$MODE" = "spec" ]; then
+    TOTAL_ITERATIONS=0
+    SPEC_READY=false
+
+    echo ""
+    echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;35m║              SPEC CREATION MODE                            ║\033[0m"
+    echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
+    echo -e "\033[1;35m║  research → draft → refine → review → fix → signoff       ║\033[0m"
+    echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PHASE 2a: RESEARCH
+    # ─────────────────────────────────────────────────────────────────────
+    print_phase_banner "RESEARCH" $SPEC_RESEARCH_ITERS
+
+    RESEARCH_ITERATION=0
+    while [ $RESEARCH_ITERATION -lt $SPEC_RESEARCH_ITERS ]; do
+        RESEARCH_ITERATION=$((RESEARCH_ITERATION + 1))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        if ! run_single_iteration "./.ralph/prompts/spec_research.md" $TOTAL_ITERATIONS "RESEARCH ($RESEARCH_ITERATION/$SPEC_RESEARCH_ITERS)"; then
+            echo -e "  \033[1;31m✗\033[0m Research phase failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    echo -e "  \033[1;32m✓\033[0m Research phase complete"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PHASE 2b: DRAFT
+    # ─────────────────────────────────────────────────────────────────────
+    print_phase_banner "DRAFT" $SPEC_DRAFT_ITERS
+
+    DRAFT_ITERATION=0
+    while [ $DRAFT_ITERATION -lt $SPEC_DRAFT_ITERS ]; do
+        DRAFT_ITERATION=$((DRAFT_ITERATION + 1))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        if ! run_single_iteration "./.ralph/prompts/spec_draft.md" $TOTAL_ITERATIONS "DRAFT ($DRAFT_ITERATION/$SPEC_DRAFT_ITERS)"; then
+            echo -e "  \033[1;31m✗\033[0m Draft phase failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    # Copy new spec to active.md if it was created
+    if [ -f "$SPEC_FILE" ]; then
+        echo -e "  \033[1;36mℹ\033[0m  Copying spec to active.md"
+        cp "$SPEC_FILE" "$ACTIVE_SPEC"
+        git add "$ACTIVE_SPEC"
+        git commit -m "spec: copy to active.md" 2>/dev/null || true
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+    fi
+
+    echo -e "  \033[1;32m✓\033[0m Draft phase complete"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PHASE 2c: REFINE (with early exit)
+    # ─────────────────────────────────────────────────────────────────────
+    print_phase_banner "REFINE" $SPEC_REFINE_ITERS
+
+    REFINE_ITERATION=0
+    REFINEMENT_DONE=false
+    while [ $REFINE_ITERATION -lt $SPEC_REFINE_ITERS ] && [ "$REFINEMENT_DONE" = false ]; do
+        REFINE_ITERATION=$((REFINE_ITERATION + 1))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        # Check for early exit — REFINEMENT_COMPLETE flag in spec_questions.md
+        if [ -f "./.ralph/spec_questions.md" ]; then
+            if grep -q 'REFINEMENT_COMPLETE=true' "./.ralph/spec_questions.md" 2>/dev/null; then
+                echo -e "  \033[1;32m✓\033[0m Refinement complete — all questions answered, no feedback pending"
+                REFINEMENT_DONE=true
+                break
+            fi
+
+            # Show unanswered question count
+            UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null || echo "0")
+            if [ "$UNANSWERED" -gt 0 ]; then
+                echo -e "  \033[1;34mℹ\033[0m  $UNANSWERED unanswered questions remaining"
+                echo -e "  \033[1;34mℹ\033[0m  Edit .ralph/spec_questions.md to answer them, then this phase will incorporate them"
+            fi
+        fi
+
+        # Check for user-review.md feedback
+        if [ -f "./.ralph/user-review.md" ]; then
+            REVIEW_LINES=$(wc -l < "./.ralph/user-review.md" 2>/dev/null || echo "0")
+            if [ "$REVIEW_LINES" -gt 1 ]; then
+                echo -e "  \033[1;34mℹ\033[0m  User review feedback detected ($REVIEW_LINES lines)"
+            fi
+        fi
+
+        if ! run_single_iteration "./.ralph/prompts/spec_refine.md" $TOTAL_ITERATIONS "REFINE ($REFINE_ITERATION/$SPEC_REFINE_ITERS)"; then
+            echo -e "  \033[1;31m✗\033[0m Refine iteration failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    echo -e "  \033[1;32m✓\033[0m Refine phase complete ($REFINE_ITERATION iterations)"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PHASE 3a: REVIEW
+    # ─────────────────────────────────────────────────────────────────────
+    print_phase_banner "SPEC REVIEW" $SPEC_REVIEW_ITERS
+
+    REVIEW_ITERATION=0
+    while [ $REVIEW_ITERATION -lt $SPEC_REVIEW_ITERS ]; do
+        REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        if ! run_single_iteration "./.ralph/prompts/spec_review.md" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
+            echo -e "  \033[1;31m✗\033[0m Review phase failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    echo -e "  \033[1;32m✓\033[0m Review phase complete"
+
+    # ─────────────────────────────────────────────────────────────────────
+    # PHASE 3b: REVIEW-FIX (conditional)
+    # ─────────────────────────────────────────────────────────────────────
+    SPEC_REVIEW_FILE="./.ralph/spec_review.md"
+    SHOULD_RUN_SPEC_FIX=false
+    if [ -f "$SPEC_REVIEW_FILE" ]; then
+        SPEC_FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+        SPEC_FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+        if [ "$SPEC_FIX_BLOCKING" -gt 0 ] || [ "$SPEC_FIX_ATTENTION" -gt 0 ]; then
+            SHOULD_RUN_SPEC_FIX=true
+        fi
+    fi
+
+    if [ "$SHOULD_RUN_SPEC_FIX" = true ]; then
+        print_phase_banner "SPEC REVIEW-FIX" $SPEC_REVIEWFIX_ITERS
+        echo -e "  \033[1;34mℹ\033[0m  Issues to fix: \033[1;31m❌ Blocking: $SPEC_FIX_BLOCKING\033[0m  \033[1;33m⚠️ Attention: $SPEC_FIX_ATTENTION\033[0m"
+
+        REVIEWFIX_ITERATION=0
+        while [ $REVIEWFIX_ITERATION -lt $SPEC_REVIEWFIX_ITERS ]; do
+            REVIEWFIX_ITERATION=$((REVIEWFIX_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "./.ralph/prompts/spec_review_fix.md" $TOTAL_ITERATIONS "SPEC REVIEW-FIX ($REVIEWFIX_ITERATION/$SPEC_REVIEWFIX_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Review-fix iteration failed"
+                if check_circuit_breaker; then
+                    break
+                fi
+            fi
+        done
+
+        echo -e "  \033[1;32m✓\033[0m Review-fix phase complete"
+    else
+        echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
+    fi
+
+    # ─────────────────────────────────────────────────────────────────────
+    # SIGN-OFF CHECK
+    # ─────────────────────────────────────────────────────────────────────
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+    if run_spec_signoff_check; then
+        SPEC_READY=true
+    fi
+
+    # Calculate final total elapsed time
+    FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+    FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+
+    # Clean up state file on completion
+    rm -f "$STATE_FILE"
+
+    echo ""
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    if [ "$SPEC_READY" = true ]; then
+        echo -e "\033[1;32m  🎉 Spec created and approved in $TOTAL_ITERATIONS iteration(s)\033[0m"
+        echo -e "\033[1;32m  Next: node .ralph/run.js $SPEC_NAME plan\033[0m"
+    else
+        echo -e "\033[1;33m  ⚠ Spec creation completed but not yet approved\033[0m"
+        echo -e "\033[1;33m  Review .ralph/spec_review.md and .ralph/spec_questions.md\033[0m"
+        echo -e "\033[1;33m  Then run spec mode again to continue refinement\033[0m"
+    fi
+    echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo ""
+
+    exit 0
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FULL MODE - Runs plan → build → review → check cycles
