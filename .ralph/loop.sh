@@ -1,10 +1,12 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|full] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
 #   ./loop.sh my-feature build 20           # Build mode, 20 iterations, quiet
 #   ./loop.sh my-feature review             # Review mode, 10 iterations, quiet
+#   ./loop.sh my-feature review-fix         # Review-fix mode, 5 iterations, quiet
+#   ./loop.sh my-feature debug              # Debug mode, 1 iteration, verbose, no commit
 #   ./loop.sh my-feature plan 10 --verbose  # Plan mode, 10 iterations, verbose
 #   ./loop.sh my-feature full               # Full mode: plan→build→review→check cycles
 #   ./loop.sh my-feature full 100           # Full mode with max 100 total iterations
@@ -13,6 +15,10 @@
 #   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
 #   FULL_REVIEW_ITERS=5     # Review iterations per cycle (default: 5)
+#   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
+#
+# Circuit breaker settings (via environment variables):
+#   MAX_CONSECUTIVE_FAILURES=3  # Stop after N consecutive failures (default: 3)
 
 # Parse arguments
 SPEC_NAME=""
@@ -25,7 +31,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "full" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -35,7 +41,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -53,6 +59,13 @@ ACTIVE_SPEC="./.ralph/specs/active.md"
 echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
 cp "$SPEC_FILE" "$ACTIVE_SPEC"
 
+# Circuit breaker settings
+MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
+CONSECUTIVE_FAILURES=0
+
+# State file for checkpointing
+STATE_FILE="./.ralph/state.json"
+
 # Set defaults based on mode
 if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="./.ralph/prompts/plan.md"
@@ -61,12 +74,22 @@ elif [ "$MODE" = "review" ]; then
     SETUP_PROMPT_FILE="./.ralph/prompts/review_setup.md"
     PROMPT_FILE="./.ralph/prompts/review.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+elif [ "$MODE" = "review-fix" ]; then
+    PROMPT_FILE="./.ralph/prompts/review_fix.md"
+    MAX_ITERATIONS=${MAX_ITERATIONS:-5}
+elif [ "$MODE" = "debug" ]; then
+    # Debug mode: single iteration, verbose, no commit/push
+    PROMPT_FILE="./.ralph/prompts/build.md"
+    MAX_ITERATIONS=1
+    VERBOSE=true
+    NO_COMMIT=true
 elif [ "$MODE" = "full" ]; then
     # Full mode: cycles of plan → build → review → completion check
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
     FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-5}
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-15}  # More iterations to cover all review items
+    FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
@@ -104,8 +127,10 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
 if [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → check"
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
+elif [ "$MODE" = "debug" ]; then
+    echo "⚠️  DEBUG MODE - No commits will be made"
 else
     [ -n "$SETUP_PROMPT_FILE" ] && echo "Setup:   $SETUP_PROMPT_FILE"
     echo "Prompt:  $PROMPT_FILE"
@@ -113,6 +138,7 @@ else
 fi
 echo "Branch:  $CURRENT_BRANCH"
 echo "Verbose: $VERBOSE"
+echo "Circuit Breaker: $MAX_CONSECUTIVE_FAILURES consecutive failures"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # Verify prompt file(s) exist
@@ -135,6 +161,9 @@ if [ "$MODE" = "full" ]; then
     [ -f "./.ralph/prompts/review_ux.md" ] && echo -e "  \033[1;35m✓\033[0m UX Expert (review_ux.md)"
     [ -f "./.ralph/prompts/review_db.md" ] && echo -e "  \033[1;36m✓\033[0m DB Expert (review_db.md)"
     [ -f "./.ralph/prompts/review_qa.md" ] && echo -e "  \033[1;33m✓\033[0m QA Expert (review_qa.md)"
+    [ -f "./.ralph/prompts/review_security.md" ] && echo -e "  \033[1;31m✓\033[0m Security Expert (review_security.md)"
+    [ -f "./.ralph/prompts/review_perf.md" ] && echo -e "  \033[1;32m✓\033[0m Performance Expert (review_perf.md)"
+    [ -f "./.ralph/prompts/review_api.md" ] && echo -e "  \033[1;34m✓\033[0m API Expert (review_api.md)"
     [ -f "./.ralph/prompts/review.md" ] && echo -e "  \033[1;37m✓\033[0m General (review.md - fallback)"
     echo ""
 else
@@ -175,6 +204,100 @@ trap "rm -rf $TEMP_DIR" EXIT
 
 # Record start time for total elapsed tracking
 LOOP_START_TIME=$(date +%s)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CHECKPOINTING FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Save current state to checkpoint file
+save_state() {
+    local phase=$1
+    local iteration=$2
+    local task=$3
+    local last_commit=$(git rev-parse HEAD 2>/dev/null || echo "none")
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    
+    cat > "$STATE_FILE" << EOF
+{
+  "spec_name": "$SPEC_NAME",
+  "current_phase": "$phase",
+  "current_iteration": $iteration,
+  "current_task": "$task",
+  "last_successful_commit": "$last_commit",
+  "session_start": "${SESSION_START:-$now}",
+  "last_update": "$now",
+  "consecutive_failures": $CONSECUTIVE_FAILURES,
+  "total_iterations": $TOTAL_ITERATIONS,
+  "error_count": ${ERROR_COUNT:-0}
+}
+EOF
+}
+
+# Load state from checkpoint file (if exists and matches current spec)
+load_state() {
+    if [ -f "$STATE_FILE" ]; then
+        local saved_spec=$(grep -o '"spec_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | head -1 | sed 's/"spec_name"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
+        if [ "$saved_spec" = "$SPEC_NAME" ]; then
+            echo -e "\033[1;33m📋 Found checkpoint for $SPEC_NAME\033[0m"
+            cat "$STATE_FILE"
+            echo ""
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Create paused state file when circuit breaker trips
+create_paused_state() {
+    local reason=$1
+    cat > "./.ralph/paused.md" << EOF
+# ⚠️ Ralph Paused - Human Intervention Required
+
+**Spec**: $SPEC_NAME
+**Branch**: $CURRENT_BRANCH
+**Time**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+**Reason**: $reason
+
+## Context
+
+- **Consecutive failures**: $CONSECUTIVE_FAILURES
+- **Last iteration**: $ITERATION
+- **Mode**: $MODE
+
+## What Happened
+
+$reason
+
+## Suggested Actions
+
+1. Check the logs in the temp directory or verbose output
+2. Review the latest changes: \`git diff HEAD~1\`
+3. Check `.ralph/implementation_plan.md` for [BLOCKED] items
+4. Fix the issue manually or update AGENTS.md with guidance
+5. Delete this file and restart Ralph
+
+## Resume Command
+
+\`\`\`bash
+rm .ralph/paused.md
+node .ralph/run.js $SPEC_NAME $MODE
+\`\`\`
+EOF
+    git add .ralph/paused.md
+    git commit -m "Ralph paused: $reason"
+    git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+}
+
+# Initialize session
+SESSION_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+TOTAL_ITERATIONS=0
+ERROR_COUNT=0
+
+# Check for existing checkpoint
+if load_state; then
+    echo -e "\033[1;36mℹ️  Previous session state found. Continuing from checkpoint.\033[0m"
+    echo ""
+fi
 
 # Run setup prompt if defined (for review mode)
 if [ -n "$SETUP_PROMPT_FILE" ]; then
@@ -506,6 +629,9 @@ run_single_iteration() {
     echo -e "  \033[1;35mPhase:\033[0m $phase_name"
     echo ""
     
+    # Save checkpoint
+    save_state "$phase_name" "$iteration_num" "Starting iteration"
+    
     # Prepare log file for this iteration
     LOG_FILE="$TEMP_DIR/iteration_${iteration_num}.log"
     
@@ -519,6 +645,8 @@ run_single_iteration() {
         if [ $CLAUDE_EXIT -ne 0 ]; then
             echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
             echo "  Check log: $LOG_FILE"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
             return 1
         fi
     else
@@ -538,14 +666,23 @@ run_single_iteration() {
         if [ $CLAUDE_EXIT -ne 0 ]; then
             echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
             echo "  Check log: $LOG_FILE"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
             return 1
         else
             echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+            CONSECUTIVE_FAILURES=0  # Reset on success
         fi
     fi
     
     # Generate and display summary
     generate_summary "$LOG_FILE" "$iteration_num" "$TURN_START_TIME"
+    
+    # Skip commit/push in debug mode
+    if [ "${NO_COMMIT:-false}" = true ]; then
+        echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
+        return 0
+    fi
     
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
@@ -553,11 +690,14 @@ run_single_iteration() {
         git push -u origin "$CURRENT_BRANCH"
     }
     
+    # Update checkpoint after successful iteration
+    save_state "$phase_name" "$iteration_num" "Completed successfully"
+    
     return 0
 }
 
 # Helper function to determine which review specialist to use
-# Returns: ux, db, or qa
+# Returns: ux, db, qa, security, perf, or api
 get_next_review_specialist() {
     local checklist_file="./.ralph/review_checklist.md"
     
@@ -569,10 +709,16 @@ get_next_review_specialist() {
     # Find the first unchecked item and check its tag
     local next_item=$(grep -m1 '^\- \[ \]' "$checklist_file" 2>/dev/null || echo "")
     
-    if echo "$next_item" | grep -qi '\[UX\]'; then
+    if echo "$next_item" | grep -qi '\[SEC'; then
+        echo "security"
+    elif echo "$next_item" | grep -qi '\[UX\]'; then
         echo "ux"
     elif echo "$next_item" | grep -qi '\[DB\]'; then
         echo "db"
+    elif echo "$next_item" | grep -qi '\[PERF\]'; then
+        echo "perf"
+    elif echo "$next_item" | grep -qi '\[API\]'; then
+        echo "api"
     else
         echo "qa"
     fi
@@ -601,34 +747,59 @@ run_completion_check() {
             --output-format=json 2>"$check_log")
     fi
     
-    # Extract the result text from Claude's JSON response
-    local result_text=$(echo "$check_result" | grep -o '"result"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"result"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
-    
-    # If we couldn't extract from result field, try to find JSON in the response
-    if [ -z "$result_text" ]; then
-        result_text="$check_result"
+    # Parse Claude's JSON response using jq
+    # Claude with --output-format=json wraps the response in a result field
+    # First try to extract from the result field, then try the raw response
+    local json_text
+    json_text=$(echo "$check_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$check_result"
     fi
-    
-    # Check if the response indicates completion
-    if echo "$result_text" | grep -qi '"complete"[[:space:]]*:[[:space:]]*true'; then
-        local reason=$(echo "$result_text" | grep -o '"reason"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"reason"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
+
+    # Extract fields with jq — handles multiline, nested quotes, and whitespace correctly
+    local is_complete=$(echo "$json_text" | jq -r '.complete // false' 2>/dev/null)
+    local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
+    local reason=$(echo "$json_text" | jq -r '.reason // empty' 2>/dev/null)
+
+    if [ "$is_complete" = "true" ]; then
         echo ""
         echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
         echo -e "\033[1;32m  ✅ IMPLEMENTATION COMPLETE!\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
         echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
         [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
         echo ""
         return 0  # Complete
     else
-        local reason=$(echo "$result_text" | grep -o '"reason"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/"reason"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
         echo ""
         echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
         echo -e "\033[1;33m  ⚠ Implementation not yet complete\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
         echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
         [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
         echo ""
         return 1  # Not complete
     fi
+}
+
+# Check if circuit breaker should trip
+check_circuit_breaker() {
+    if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
+        echo ""
+        echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+        echo -e "\033[1;31m  🔴 CIRCUIT BREAKER TRIPPED\033[0m"
+        echo -e "\033[1;31m  $CONSECUTIVE_FAILURES consecutive failures detected\033[0m"
+        echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+        echo ""
+        echo -e "  \033[1;33mRalph has paused to prevent further issues.\033[0m"
+        echo -e "  \033[1;33mHuman intervention required.\033[0m"
+        echo ""
+        
+        create_paused_state "Circuit breaker tripped after $CONSECUTIVE_FAILURES consecutive failures"
+        
+        return 0  # Circuit breaker tripped
+    fi
+    return 1  # Circuit breaker not tripped
 }
 
 # Print cycle banner
@@ -639,7 +810,7 @@ print_cycle_banner() {
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → check            ║\033[0m"
+    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → check  ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 }
@@ -674,6 +845,11 @@ if [ "$MODE" = "full" ]; then
             break
         fi
         
+        # Check circuit breaker
+        if check_circuit_breaker; then
+            break
+        fi
+        
         print_cycle_banner $CYCLE
         
         # ─────────────────────────────────────────────────────────────────────
@@ -688,9 +864,11 @@ if [ "$MODE" = "full" ]; then
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
             
             if ! run_single_iteration "./.ralph/prompts/plan.md" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$FULL_PLAN_ITERS)"; then
-                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
-                PHASE_ERROR=true
-                break
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
             fi
             
             # Show progress
@@ -704,7 +882,7 @@ if [ "$MODE" = "full" ]; then
         # Exit full mode on error
         if [ "$PHASE_ERROR" = true ]; then
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
-            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
             break
         fi
@@ -734,16 +912,18 @@ if [ "$MODE" = "full" ]; then
             fi
             
             if ! run_single_iteration "./.ralph/prompts/build.md" $TOTAL_ITERATIONS "BUILD ($BUILD_ITERATION/$FULL_BUILD_ITERS)"; then
-                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
-                PHASE_ERROR=true
-                break
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
             fi
         done
         
         # Exit full mode on error
         if [ "$PHASE_ERROR" = true ]; then
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
-            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
             break
         fi
@@ -795,15 +975,23 @@ if [ "$MODE" = "full" ]; then
                 fi
                 
                 # Count items by specialist type
+                SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
                 UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
                 DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                QA_COUNT=$((UNCHECKED_COUNT - UX_COUNT - DB_COUNT))
-                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+                PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
+                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
             fi
             
             # Determine which specialist should handle the next item
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
+                security)
+                    REVIEW_PROMPT="./.ralph/prompts/review_security.md"
+                    SPECIALIST_NAME="Security"
+                    SPECIALIST_COLOR="\033[1;31m"  # Red
+                    ;;
                 ux)
                     REVIEW_PROMPT="./.ralph/prompts/review_ux.md"
                     SPECIALIST_NAME="UX"
@@ -813,6 +1001,16 @@ if [ "$MODE" = "full" ]; then
                     REVIEW_PROMPT="./.ralph/prompts/review_db.md"
                     SPECIALIST_NAME="DB"
                     SPECIALIST_COLOR="\033[1;36m"  # Cyan
+                    ;;
+                perf)
+                    REVIEW_PROMPT="./.ralph/prompts/review_perf.md"
+                    SPECIALIST_NAME="Performance"
+                    SPECIALIST_COLOR="\033[1;32m"  # Green
+                    ;;
+                api)
+                    REVIEW_PROMPT="./.ralph/prompts/review_api.md"
+                    SPECIALIST_NAME="API"
+                    SPECIALIST_COLOR="\033[1;34m"  # Blue
                     ;;
                 *)
                     REVIEW_PROMPT="./.ralph/prompts/review_qa.md"
@@ -831,22 +1029,82 @@ if [ "$MODE" = "full" ]; then
             echo -e "  ${SPECIALIST_COLOR}🔍 Specialist: $SPECIALIST_NAME\033[0m"
             
             if ! run_single_iteration "$REVIEW_PROMPT" $TOTAL_ITERATIONS "REVIEW-$SPECIALIST_NAME ($REVIEW_ITERATION/$FULL_REVIEW_ITERS)"; then
-                echo -e "  \033[1;31m✗\033[0m Claude error - stopping full mode"
-                PHASE_ERROR=true
-                break
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
             fi
         done
         
         # Exit full mode on error
         if [ "$PHASE_ERROR" = true ]; then
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
-            echo -e "\033[1;31m  ❌ Full mode stopped due to Claude error\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
             break
         fi
         
         echo -e "  \033[1;32m✓\033[0m Review phase complete"
-        
+
+        # ─────────────────────────────────────────────────────────────────────
+        # REVIEW-FIX PHASE
+        # ─────────────────────────────────────────────────────────────────────
+
+        # Only run review-fix if review.md exists and has blocking/attention issues
+        REVIEW_FILE="./.ralph/review.md"
+        SHOULD_RUN_FIX=false
+        if [ -f "$REVIEW_FILE" ]; then
+            FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            if [ "$FIX_BLOCKING" -gt 0 ] || [ "$FIX_ATTENTION" -gt 0 ]; then
+                SHOULD_RUN_FIX=true
+            fi
+        fi
+
+        if [ "$SHOULD_RUN_FIX" = true ]; then
+            print_phase_banner "REVIEW-FIX" $FULL_REVIEWFIX_ITERS
+            echo -e "  \033[1;34mℹ\033[0m  Issues to fix: \033[1;31m❌ Blocking: $FIX_BLOCKING\033[0m  \033[1;33m⚠️ Attention: $FIX_ATTENTION\033[0m"
+
+            REVIEWFIX_ITERATION=0
+            PHASE_ERROR=false
+            while [ $REVIEWFIX_ITERATION -lt $FULL_REVIEWFIX_ITERS ]; do
+                REVIEWFIX_ITERATION=$((REVIEWFIX_ITERATION + 1))
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                # Check if all issues are resolved before running
+                if [ -f "$REVIEW_FILE" ]; then
+                    REMAINING_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
+                    REMAINING_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+                    if [ "$REMAINING_BLOCKING" -eq 0 ] && [ "$REMAINING_ATTENTION" -eq 0 ]; then
+                        echo -e "  \033[1;32m✓\033[0m All review issues resolved!"
+                        break
+                    fi
+                    echo -e "  \033[1;34mℹ\033[0m  Remaining: \033[1;31m❌ $REMAINING_BLOCKING\033[0m  \033[1;33m⚠️ $REMAINING_ATTENTION\033[0m"
+                fi
+
+                if ! run_single_iteration "./.ralph/prompts/review_fix.md" $TOTAL_ITERATIONS "REVIEW-FIX ($REVIEWFIX_ITERATION/$FULL_REVIEWFIX_ITERS)"; then
+                    echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                    if check_circuit_breaker; then
+                        PHASE_ERROR=true
+                        break
+                    fi
+                fi
+            done
+
+            # Exit full mode on error
+            if [ "$PHASE_ERROR" = true ]; then
+                echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
+                echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+                break
+            fi
+
+            echo -e "  \033[1;32m✓\033[0m Review-fix phase complete"
+        else
+            echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
+        fi
+
         # ─────────────────────────────────────────────────────────────────────
         # COMPLETION CHECK
         # ─────────────────────────────────────────────────────────────────────
@@ -861,6 +1119,11 @@ if [ "$MODE" = "full" ]; then
     FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
     FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
     
+    # Clean up state file on successful completion
+    if [ "$IMPLEMENTATION_COMPLETE" = true ]; then
+        rm -f "$STATE_FILE"
+    fi
+    
     echo ""
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     if [ "$IMPLEMENTATION_COMPLETE" = true ]; then
@@ -869,6 +1132,7 @@ if [ "$MODE" = "full" ]; then
         echo -e "\033[1;33m  ⚠ Ralph stopped after $CYCLE cycle(s), $TOTAL_ITERATIONS iteration(s)\033[0m"
     fi
     echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     echo ""
     
@@ -876,7 +1140,7 @@ if [ "$MODE" = "full" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STANDARD MODE - Runs single mode (plan, build, or review)
+# STANDARD MODE - Runs single mode (plan, build, review, review-fix, or debug)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 while true; do
@@ -885,6 +1149,11 @@ while true; do
     
     if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -gt $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
+        break
+    fi
+    
+    # Check circuit breaker
+    if check_circuit_breaker; then
         break
     fi
 
@@ -917,14 +1186,21 @@ while true; do
             fi
             
             # Count items by specialist type
+            SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
             UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
             DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            QA_COUNT=$((UNCHECKED_COUNT - UX_COUNT - DB_COUNT))
-            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+            PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
+            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
             
             # Determine which specialist should handle the next item
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
+                security)
+                    PROMPT_FILE="./.ralph/prompts/review_security.md"
+                    echo -e "  \033[1;31m🔍 Specialist: Security Expert\033[0m"
+                    ;;
                 ux)
                     PROMPT_FILE="./.ralph/prompts/review_ux.md"
                     echo -e "  \033[1;35m🔍 Specialist: UX Expert\033[0m"
@@ -932,6 +1208,14 @@ while true; do
                 db)
                     PROMPT_FILE="./.ralph/prompts/review_db.md"
                     echo -e "  \033[1;36m🔍 Specialist: DB Expert\033[0m"
+                    ;;
+                perf)
+                    PROMPT_FILE="./.ralph/prompts/review_perf.md"
+                    echo -e "  \033[1;32m🔍 Specialist: Performance Expert\033[0m"
+                    ;;
+                api)
+                    PROMPT_FILE="./.ralph/prompts/review_api.md"
+                    echo -e "  \033[1;34m🔍 Specialist: API Expert\033[0m"
                     ;;
                 *)
                     PROMPT_FILE="./.ralph/prompts/review_qa.md"
@@ -948,10 +1232,32 @@ while true; do
             echo -e "  \033[1;31m✗\033[0m  Review checklist not found. Run setup first."
             break
         fi
+    elif [ "$MODE" = "review-fix" ]; then
+        # Check if there are blocking issues to fix
+        REVIEW_FILE="./.ralph/review.md"
+        if [ -f "$REVIEW_FILE" ]; then
+            BLOCKING_COUNT=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            if [ "$BLOCKING_COUNT" -eq 0 ] && [ "$ATTENTION_COUNT" -eq 0 ]; then
+                echo ""
+                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "\033[1;32m  ✅ All review issues resolved!\033[0m"
+                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo ""
+                break
+            fi
+            echo -e "  \033[1;34mℹ\033[0m  Issues remaining: \033[1;31m❌ Blocking: $BLOCKING_COUNT\033[0m  \033[1;33m⚠️ Attention: $ATTENTION_COUNT\033[0m"
+        else
+            echo -e "  \033[1;31m✗\033[0m  Review file not found. Run review mode first."
+            break
+        fi
     fi
 
     # Display turn banner
     print_turn_banner $ITERATION
+    
+    # Save checkpoint
+    save_state "$MODE" "$ITERATION" "Running iteration"
 
     # Prepare log file for this iteration
     LOG_FILE="$TEMP_DIR/iteration_${ITERATION}.log"
@@ -968,6 +1274,7 @@ while true; do
             --dangerously-skip-permissions \
             --output-format=stream-json \
             --verbose 2>&1 | tee "$LOG_FILE"
+        CLAUDE_EXIT=${PIPESTATUS[1]}
     else
         # Quiet mode: show spinner, log to file
         echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $ITERATION..."
@@ -982,23 +1289,35 @@ while true; do
         spin $CLAUDE_PID
         wait $CLAUDE_PID
         CLAUDE_EXIT=$?
-        
-        if [ $CLAUDE_EXIT -ne 0 ]; then
-            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
-            echo "  Check log: $LOG_FILE"
-        else
-            echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
-        fi
+    fi
+    
+    if [ $CLAUDE_EXIT -ne 0 ]; then
+        echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+        echo "  Check log: $LOG_FILE"
+        CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+        ERROR_COUNT=$((ERROR_COUNT + 1))
+    else
+        echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+        CONSECUTIVE_FAILURES=0  # Reset on success
     fi
 
     # Generate and display summary
     generate_summary "$LOG_FILE" "$ITERATION" "$TURN_START_TIME"
+
+    # Skip commit/push in debug mode
+    if [ "${NO_COMMIT:-false}" = true ]; then
+        echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
+        break  # Debug mode only runs once
+    fi
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
+    
+    # Update checkpoint
+    save_state "$MODE" "$ITERATION" "Completed"
 done
 
 # Calculate final total elapsed time
@@ -1006,8 +1325,12 @@ FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
 FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
 COMPLETED_ITERATIONS=$((ITERATION - 1))
 
+# Clean up state file on normal completion
+rm -f "$STATE_FILE"
+
 echo ""
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
 echo -e "\033[1;32m  Ralph completed $COMPLETED_ITERATIONS iteration(s) in $FINAL_FORMATTED\033[0m"
+echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
 echo ""

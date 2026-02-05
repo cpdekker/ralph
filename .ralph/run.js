@@ -404,14 +404,16 @@ async function interactivePrompt(preselectedMode = null) {
     console.log(`\x1b[32mMode: ${preselectedMode}\x1b[0m\n`);
   } else {
     console.log('Modes:');
-    console.log('  1. plan   - Analyze codebase and create implementation plan');
-    console.log('  2. build  - Implement tasks from the plan');
-    console.log('  3. review - Review implementation for bugs and issues');
-    console.log('  4. full   - Full cycle: plan → build → review → check (repeats until complete)');
+    console.log('  1. plan       - Analyze codebase and create implementation plan');
+    console.log('  2. build      - Implement tasks from the plan');
+    console.log('  3. review     - Review implementation for bugs and issues');
+    console.log('  4. review-fix - Fix issues identified during review');
+    console.log('  5. debug      - Single iteration, verbose, no commits');
+    console.log('  6. full       - Full cycle: plan → build → review → check (repeats until complete)');
     console.log('');
 
     while (!mode) {
-      const input = await question('Select mode [1/2/3/4 or plan/build/review/full] (default: build): ');
+      const input = await question('Select mode [1-6 or name] (default: build): ');
       const trimmed = input.trim().toLowerCase();
 
       if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
@@ -420,37 +422,53 @@ async function interactivePrompt(preselectedMode = null) {
         mode = 'plan';
       } else if (trimmed === '3' || trimmed === 'review') {
         mode = 'review';
-      } else if (trimmed === '4' || trimmed === 'full' || trimmed === 'yolo') {
+      } else if (trimmed === '4' || trimmed === 'review-fix') {
+        mode = 'review-fix';
+      } else if (trimmed === '5' || trimmed === 'debug') {
+        mode = 'debug';
+      } else if (trimmed === '6' || trimmed === 'full' || trimmed === 'yolo') {
         mode = 'full';
       } else {
-        console.log('\x1b[31mInvalid selection. Enter 1, 2, 3, 4, plan, build, review, or full.\x1b[0m');
+        console.log('\x1b[31mInvalid selection. Enter 1-6 or mode name.\x1b[0m');
       }
     }
   }
 
-  const defaultIterations = mode === 'plan' ? 5 : (mode === 'full' ? 10 : 10);
+  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10)));
   const iterLabel = mode === 'full' ? 'max cycles' : 'iterations';
+
+  // Debug mode doesn't need iteration prompt
+  if (mode === 'debug') {
+    console.log('\x1b[33m⚠️  Debug mode: 1 iteration, verbose, no commits\x1b[0m\n');
+  }
   const iterInput = await question(`Number of ${iterLabel} (default: ${defaultIterations}): `);
   const iterations = parseInt(iterInput.trim()) || defaultIterations;
 
   const verboseInput = await question('Verbose output? (default: No) [y/N]: ');
   const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
 
+  // Debug mode never runs in background
   // Full mode defaults to background since it can run for hours
-  const backgroundDefault = mode === 'full';
-  const backgroundPrompt = backgroundDefault
-    ? 'Run in background? (Ralph clones repo, you keep working) (default: Yes) [Y/n]: '
-    : 'Run in background? (Ralph clones repo, you keep working) (default: No) [y/N]: ';
-  const backgroundInput = await question(backgroundPrompt);
-  const backgroundTrimmed = backgroundInput.trim().toLowerCase();
+  let background = false;
 
-  let background;
-  if (backgroundDefault) {
-    // For full mode, default is yes - only 'n' or 'no' turns it off
-    background = backgroundTrimmed !== 'n' && backgroundTrimmed !== 'no';
+  if (mode === 'debug') {
+    console.log('\x1b[33mDebug mode always runs in foreground.\x1b[0m\n');
+    background = false;
   } else {
-    // For other modes, default is no - only 'y' or 'yes' turns it on
-    background = backgroundTrimmed === 'y' || backgroundTrimmed === 'yes';
+    const backgroundDefault = mode === 'full';
+    const backgroundPrompt = backgroundDefault
+      ? 'Run in background? (Ralph clones repo, you keep working) (default: Yes) [Y/n]: '
+      : 'Run in background? (Ralph clones repo, you keep working) (default: No) [y/N]: ';
+    const backgroundInput = await question(backgroundPrompt);
+    const backgroundTrimmed = backgroundInput.trim().toLowerCase();
+
+    if (backgroundDefault) {
+      // For full mode, default is yes - only 'n' or 'no' turns it off
+      background = backgroundTrimmed !== 'n' && backgroundTrimmed !== 'no';
+    } else {
+      // For other modes, default is no - only 'y' or 'yes' turns it on
+      background = backgroundTrimmed === 'y' || backgroundTrimmed === 'yes';
+    }
   }
 
   rl.close();
@@ -475,16 +493,18 @@ const background = args.includes('--background') || args.includes('-b');
 const planFlag = args.includes('--plan');
 const buildFlag = args.includes('--build');
 const reviewFlag = args.includes('--review');
+const reviewFixFlag = args.includes('--review-fix');
+const debugFlag = args.includes('--debug');
 const fullFlag = args.includes('--full') || args.includes('--yolo');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
   a !== '--background' && a !== '-b' &&
   a !== '--no-background' && a !== '--foreground' && a !== '-f' &&
-  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--full' && a !== '--yolo'
+  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo'
 );
 
 // Determine preselected mode from flags
-const preselectedMode = fullFlag ? 'full' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)));
+const preselectedMode = fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)))));
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -530,6 +550,15 @@ if (filteredArgs.length === 0) {
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);
     }
+  } else if (filteredArgs[1] === 'review-fix') {
+    mode = 'review-fix';
+    iterations = 5;
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
+    }
+  } else if (filteredArgs[1] === 'debug') {
+    mode = 'debug';
+    iterations = 1;  // Debug mode: single iteration, verbose, no commit
   } else if (filteredArgs[1] === 'full' || filteredArgs[1] === 'yolo') {
     mode = 'full';
     iterations = 10;  // 10 cycles by default (each cycle = plan + build + review + check)
@@ -541,9 +570,10 @@ if (filteredArgs.length === 0) {
   }
 
   // Full mode defaults to background since it can run for hours
+  // Debug mode never runs in background
   // Use --no-background or --foreground to override
   const noBackground = args.includes('--no-background') || args.includes('--foreground') || args.includes('-f');
-  const useBackground = noBackground ? false : (background || mode === 'full');
+  const useBackground = mode === 'debug' ? false : (noBackground ? false : (background || mode === 'full'));
 
   if (useBackground) {
     // Background mode - Ralph clones and works on his own copy

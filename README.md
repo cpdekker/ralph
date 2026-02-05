@@ -16,7 +16,15 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
   - [Plan Mode](#plan-mode)
   - [Build Mode](#build-mode)
   - [Review Mode](#review-mode)
+  - [Review-Fix Mode](#review-fix-mode)
+  - [Debug Mode](#debug-mode)
   - [Full Mode](#full-mode)
+- [Advanced Features](#advanced-features)
+  - [Circuit Breaker](#circuit-breaker)
+  - [Checkpointing](#checkpointing)
+  - [Complexity Estimation](#complexity-estimation)
+  - [Dynamic Batching](#dynamic-batching)
+  - [Specialist Reviewers](#specialist-reviewers)
 - [File Structure](#file-structure)
 - [Branch Strategy](#branch-strategy)
 - [Active Spec Pattern](#active-spec-pattern)
@@ -52,7 +60,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 │  3. Picks highest-priority incomplete task                      │
 │  4. Implements using Claude Code + subagents                    │
 │  5. Runs tests, updates plan, commits & pushes                  │
-│  6. Loops until done                                            │
+│  6. Loops until done (with circuit breaker protection)          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -148,10 +156,12 @@ node .ralph/docker-build.js
 node .ralph/run.js
 
 # Or specify directly
-node .ralph/run.js my-feature plan    # Plan first
-node .ralph/run.js my-feature build   # Then build
-node .ralph/run.js my-feature review  # Review the implementation
-node .ralph/run.js my-feature full    # Full autonomous cycle
+node .ralph/run.js my-feature plan      # Plan first
+node .ralph/run.js my-feature build     # Then build
+node .ralph/run.js my-feature review    # Review the implementation
+node .ralph/run.js my-feature review-fix # Fix review findings
+node .ralph/run.js my-feature debug     # Debug mode (single iteration, no commit)
+node .ralph/run.js my-feature full      # Full autonomous cycle
 ```
 
 > ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
@@ -182,12 +192,14 @@ Available specs:
 Enter spec name (or number): 1
 
 Modes:
-  1. plan   - Analyze codebase and create implementation plan
-  2. build  - Implement tasks from the plan
-  3. review - Review implementation for bugs and issues
-  4. full   - Full cycle: plan → build → review → check (repeats until complete)
+  1. plan      - Analyze codebase and create implementation plan
+  2. build     - Implement tasks from the plan
+  3. review    - Review implementation for bugs and issues
+  4. review-fix - Fix issues identified during review
+  5. debug     - Single iteration, verbose, no commits
+  6. full      - Full cycle: plan → build → review → check (repeats until complete)
 
-Select mode [1/2/3/4 or plan/build/review/full] (default: build): plan
+Select mode [1-6 or name] (default: build): plan
 Number of iterations (default: 5): 
 ```
 
@@ -201,7 +213,7 @@ node .ralph/run.js [--plan|--build|--review|--full] [--verbose]  # Interactive w
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
-| `mode` | `plan`, `build`, `review`, or `full` | `build` |
+| `mode` | `plan`, `build`, `review`, `review-fix`, `debug`, or `full` | `build` |
 | `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 | `--plan` | Pre-select plan mode in interactive | — |
@@ -218,12 +230,11 @@ node .ralph/run.js my-feature              # Build mode, 10 iterations, quiet
 node .ralph/run.js my-feature plan         # Plan mode, 5 iterations, quiet
 node .ralph/run.js my-feature build 20     # Build mode, 20 iterations, quiet
 node .ralph/run.js my-feature review       # Review mode, 10 iterations, quiet
+node .ralph/run.js my-feature review-fix   # Review-fix mode, 5 iterations
+node .ralph/run.js my-feature debug        # Debug mode (1 iteration, verbose, no commit)
 node .ralph/run.js my-feature full         # Full mode, 10 max cycles
 node .ralph/run.js my-feature full 20      # Full mode, 20 max cycles
 node .ralph/run.js my-feature --verbose    # Build mode with full output
-node .ralph/run.js my-feature plan -v      # Plan mode with full output
-node .ralph/run.js my-feature review -v    # Review mode with full output
-node .ralph/run.js my-feature full -v      # Full mode with full output
 ```
 
 ### NPM Scripts
@@ -249,17 +260,8 @@ Then run:
 ```bash
 npm run ralph                              # Interactive mode
 npm run ralph:plan                         # Interactive with plan mode pre-selected
-npm run ralph:build                        # Interactive with build mode pre-selected
-npm run ralph:review                       # Interactive with review mode pre-selected
-npm run ralph:full                         # Interactive with full mode pre-selected
-npm run ralph -- my-feature                # Build mode (quiet)
-npm run ralph -- my-feature plan           # Plan mode (quiet)
-npm run ralph -- my-feature build 20       # Build with 20 iterations
-npm run ralph -- my-feature review         # Review mode (quiet)
-npm run ralph -- my-feature full           # Full autonomous cycle (10 max cycles)
-npm run ralph -- my-feature full 20        # Full mode with 20 max cycles
-npm run ralph -- my-feature --verbose      # Build with full output
-npm run ralph -- my-feature plan -v        # Plan with full output
+npm run ralph:full                         # Full autonomous cycle
+npm run ralph -- my-feature debug          # Debug mode
 ```
 
 ---
@@ -273,11 +275,12 @@ node .ralph/run.js <spec-name> plan [iterations]
 ```
 
 | What it does | What it doesn't do |
-|--------------|-------------------|
+|--------------|--------------------|
 | ✅ Analyzes codebase against spec | ❌ Write any code |
 | ✅ Creates/updates `implementation_plan.md` | ❌ Run tests |
-| ✅ Identifies gaps and inconsistencies | ❌ Make commits |
-| ✅ Prioritizes tasks | |
+| ✅ Adds complexity tags (`[Simple]`, `[Medium]`, `[Complex]`) | ❌ Make commits |
+| ✅ Tracks dependencies between tasks | |
+| ✅ Identifies high-risk items | |
 
 **When to use**: Starting a new feature, or reassessing priorities mid-project.
 
@@ -290,8 +293,10 @@ node .ralph/run.js <spec-name> [build] [iterations]
 | What it does |
 |--------------|
 | ✅ Picks highest-priority incomplete task |
+| ✅ Batches simple tasks (up to 3 `[Simple]` items per turn) |
 | ✅ Implements using Claude Code + subagents |
 | ✅ Runs tests after each change |
+| ✅ Reverts and documents if stuck (3-strikes rule) |
 | ✅ Commits and pushes after success |
 | ✅ Updates `implementation_plan.md` |
 
@@ -306,30 +311,157 @@ node .ralph/run.js <spec-name> review [iterations]
 | What it does | What it outputs |
 |--------------|-----------------|
 | ✅ Creates `review_checklist.md` (setup phase) | 📄 `review_checklist.md` - tracking document |
-| ✅ Reviews one item per iteration | 📄 `review.md` - comprehensive findings |
+| ✅ Reviews up to 5 items per iteration | 📄 `review.md` - comprehensive findings |
 | ✅ Compares implementation against spec | |
 | ✅ Detects bugs, bad patterns, security issues | |
 | ✅ Logs issues with file paths and line numbers | |
-| ✅ **Routes to specialist reviewers** based on file type | |
+| ✅ **Routes to specialist reviewers** based on file type and content | |
 
 **Specialist Reviewers**: Items are automatically routed to the right expert:
 
 | Specialist | Tag | Focus Areas |
 |------------|-----|-------------|
-| 🎨 **UX Expert** | `[UX]` | React/Vue components, CSS, accessibility, responsive design, UI interactions |
+| 🔒 **Security** | `[SEC]` | Authentication, authorization, input validation, secrets, encryption |
 | 🗄️ **DB Expert** | `[DB]` | SQL queries, migrations, data models, query performance, data integrity |
-| 🔍 **QA Expert** | `[QA]` | Business logic, API endpoints, error handling, testing, security |
+| 🔌 **API Expert** | `[API]` | REST endpoints, API contracts, error responses, documentation |
+| ⚡ **Performance** | `[PERF]` | Algorithm complexity, caching, memory usage, N+1 queries |
+| 🎨 **UX Expert** | `[UX]` | React/Vue components, CSS, accessibility, responsive design |
+| 🔍 **QA Expert** | `[QA]` | Business logic, error handling, testing, general quality |
 
 **When to use**: After build mode, before merging. Review findings feed back into plan mode.
 
-**Workflow integration**:
-```
-Plan → Build → Review → Plan (with fixes) → Build (fixes) → ...
+### Review-Fix Mode
+
+```bash
+node .ralph/run.js <spec-name> review-fix [iterations]
 ```
 
-When you run plan mode after a review, it automatically creates "Phase 0: Review Fixes" with critical and important issues to address first.
+| What it does |
+|--------------|
+| ✅ Fixes BLOCKING and NEEDS ATTENTION issues from review |
+| ✅ Updates `review.md` to mark issues as resolved |
+| ✅ Adds regression tests for fixes |
+| ✅ Commits with `fix:` prefix |
 
-### User Review Notes
+**When to use**: After review mode identifies issues. Bridges the gap between review findings and the next build cycle.
+
+### Debug Mode
+
+```bash
+node .ralph/run.js <spec-name> debug
+```
+
+| What it does | What it doesn't do |
+|--------------|--------------------|
+| ✅ Runs exactly 1 iteration | ❌ Commit changes |
+| ✅ Forces verbose output | ❌ Push to remote |
+| ✅ Shows full Claude reasoning | ❌ Run multiple iterations |
+
+**When to use**: Testing prompt changes, debugging Ralph behavior, or understanding why something failed.
+
+### Full Mode
+
+```bash
+node .ralph/run.js <spec-name> full [max-cycles]
+```
+
+| What it does |
+|--------------|
+| ✅ Runs complete cycles: Plan → Build → Review → Review-Fix → Check |
+| ✅ Automatically checks if implementation is complete after each cycle |
+| ✅ Reports confidence scores (0.0 - 1.0) |
+| ✅ Exits early when spec is fully implemented |
+| ✅ Protected by circuit breaker |
+| ✅ **Runs in background by default** |
+
+**Default iterations per cycle**:
+| Phase | Default | Environment Variable |
+|-------|---------|---------------------|
+| Plan | 5 | `FULL_PLAN_ITERS` |
+| Build | 10 | `FULL_BUILD_ITERS` |
+| Review | 15 | `FULL_REVIEW_ITERS` |
+| Review-Fix | 5 | `FULL_REVIEWFIX_ITERS` |
+
+**When to use**: When you want fully autonomous implementation with minimal supervision.
+
+---
+
+## Advanced Features
+
+### Circuit Breaker
+
+Ralph includes a circuit breaker that stops execution after consecutive failures to prevent runaway API costs.
+
+```bash
+# Default: 3 consecutive failures
+MAX_CONSECUTIVE_FAILURES=5 node .ralph/run.js my-feature build
+```
+
+When triggered:
+- Creates `.ralph/paused.md` with context
+- Commits and pushes the pause state
+- Exits with instructions for human intervention
+
+To resume after fixing the issue:
+```bash
+rm .ralph/paused.md
+node .ralph/run.js my-feature build
+```
+
+### Checkpointing
+
+Ralph saves state to `.ralph/state.json` before each iteration:
+
+```json
+{
+  "spec_name": "my-feature",
+  "current_phase": "build",
+  "current_iteration": 7,
+  "last_successful_commit": "abc123",
+  "session_start": "2026-02-05T10:00:00Z",
+  "consecutive_failures": 0,
+  "total_iterations": 42,
+  "error_count": 1
+}
+```
+
+If Ralph crashes, it will show the checkpoint on restart.
+
+### Complexity Estimation
+
+Plan mode tags every item with complexity estimates:
+
+| Tag | Estimated Iterations | When Used |
+|-----|---------------------|-----------|
+| `[Simple]` | ~1 iteration | Single file, <50 lines, straightforward |
+| `[Medium]` | ~2-3 iterations | Multiple files, moderate complexity |
+| `[Complex]` | ~5+ iterations | Architectural changes, many files |
+| `[RISK]` | +1-2 extra | Modifies shared code, needs extra testing |
+| `[BLOCKED]` | — | Cannot proceed, needs human intervention |
+
+### Dynamic Batching
+
+Build mode intelligently batches work:
+
+- **`[Simple]` items**: Up to 3 per turn (if independent)
+- **`[Medium]`/`[Complex]`/`[RISK]` items**: 1 per turn
+
+### Specialist Reviewers
+
+Review mode routes items to specialist prompts based on content analysis:
+
+| Detection Pattern | Specialist |
+|------------------|------------|
+| `bcrypt`, `jwt`, `auth`, `password` | Security |
+| `SELECT`, `INSERT`, Prisma/TypeORM | Database |
+| `fetch()`, `axios`, route handlers | API |
+| Loops over large data, `cache`, `memoize` | Performance |
+| JSX/TSX, CSS, `aria-*` | UX/Frontend |
+| Everything else | QA |
+
+---
+
+## User Review Notes
 
 After manually testing Ralph's work, add your feedback to `.ralph/user-review.md`:
 
@@ -355,39 +487,6 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 | 🥈 High | `review.md` (automated review) | Phase 0.5: Review Fixes |
 | 🥉 Normal | Spec requirements | Phase 1+ |
 
-### Full Mode
-
-```bash
-node .ralph/run.js <spec-name> full [max-iterations]
-```
-
-| What it does |
-|--------------|
-| ✅ Runs complete cycles: Plan → Build → Review → Check |
-| ✅ Automatically checks if implementation is complete after each cycle |
-| ✅ Exits early when spec is fully implemented |
-| ✅ Continues until complete or max iterations reached |
-| ✅ **Runs in background by default** (use `--foreground` to override) |
-
-**Default iterations per cycle**:
-| Phase | Default | Environment Variable |
-|-------|---------|---------------------|
-| Plan | 5 | `FULL_PLAN_ITERS` |
-| Build | 10 | `FULL_BUILD_ITERS` |
-| Review | 5 | `FULL_REVIEW_ITERS` |
-
-**Customize cycle iterations**:
-```bash
-# Run with custom phase iterations
-FULL_PLAN_ITERS=3 FULL_BUILD_ITERS=15 FULL_REVIEW_ITERS=3 node .ralph/run.js my-feature full
-```
-
-**When to use**: When you want fully autonomous implementation with minimal supervision. Ralph will plan, build, review, and repeat until the spec is complete or max iterations are reached.
-
-> ⚠️ **Full mode is powerful**: Each cycle runs ~20 Claude iterations (5 plan + 10 build + 5 review). Set appropriate max cycles (default: 10) to control total runtime.
-
-> 💡 **Best for**: Well-defined specs where you trust the implementation plan. Review the spec carefully before starting.
-
 ---
 
 ## File Structure
@@ -400,6 +499,8 @@ FULL_PLAN_ITERS=3 FULL_BUILD_ITERS=15 FULL_REVIEW_ITERS=3 node .ralph/run.js my-
 ├── user-review.md         # YOUR manual review notes (highest priority in plan mode)
 ├── review_checklist.md    # Review tracking (created by review mode)
 ├── review.md              # Review findings (created by review mode)
+├── state.json             # Checkpoint state (auto-managed)
+├── paused.md              # Created when circuit breaker trips
 ├── specs/
 │   ├── sample.md          # Template for new specs
 │   ├── my-feature.md      # Your feature specs
@@ -412,6 +513,10 @@ FULL_PLAN_ITERS=3 FULL_BUILD_ITERS=15 FULL_REVIEW_ITERS=3 node .ralph/run.js my-
 │   ├── review_ux.md       # UX/Frontend specialist review
 │   ├── review_db.md       # Database specialist review
 │   ├── review_qa.md       # QA specialist review (default)
+│   ├── review_security.md # Security specialist review
+│   ├── review_perf.md     # Performance specialist review
+│   ├── review_api.md      # API specialist review
+│   ├── review_fix.md      # Review-fix mode instructions
 │   ├── completion_check.md # Full mode completion check
 │   └── requirements.md    # Template for gathering requirements
 ├── run.js                 # Entry point (Node.js)
@@ -481,8 +586,10 @@ A living checklist that Ralph updates:
 
 - `- [ ]` Pending tasks
 - `- [x]` Completed tasks
-- Prioritized top to bottom
-- Add notes that persist across iterations
+- `[Simple]`/`[Medium]`/`[Complex]`/`[RISK]` complexity tags
+- Dependencies: what items depend on
+- Enables: what items this unblocks
+- `[BLOCKED]` items that need human intervention
 
 ---
 
@@ -504,11 +611,13 @@ A living checklist that Ralph updates:
 | 🎯 **Start with plan mode** | Creates a solid task list before coding |
 | 👀 **Review the plan** | Catch misunderstandings before build phase |
 | 🔍 **Run review after build** | Catches bugs, bad patterns before merging |
-| 🔄 **Use the full loop** | Plan → Build → Review → Plan (fixes) → Build |
+| 🔄 **Use the full loop** | Plan → Build → Review → Review-Fix → Check |
+| 🐛 **Use debug mode** | Test prompt changes without committing |
 | 📝 **Keep AGENTS.md minimal** | Large files waste context tokens |
 | 📖 **Write detailed specs** | More context = better implementation |
 | 👁️ **Monitor iterations** | Catch issues before they compound |
 | 🎯 **One spec at a time** | `active.md` enforces focus |
+| ⚡ **Trust the circuit breaker** | Don't disable it—fix the root cause |
 
 ---
 
@@ -556,15 +665,23 @@ git add --renormalize .
 git commit -m "Normalize line endings"
 ```
 
-Or manually:
-
-```bash
-sed -i 's/\r$//' .ralph/*.sh
-```
-
 ### Ralph keeps making the same mistakes
 
 Update `.ralph/AGENTS.md` with a new "Critical Rule" to prevent the behavior.
+
+### Circuit breaker keeps tripping
+
+Check `.ralph/paused.md` for context. Common causes:
+- Test infrastructure issues
+- Missing dependencies
+- Spec inconsistencies
+
+### Ralph is stuck on a task
+
+1. Check for `[BLOCKED]` items in `implementation_plan.md`
+2. Review the "Discovered Issues" section
+3. Add guidance to `AGENTS.md`
+4. Consider decomposing complex tasks
 
 ---
 

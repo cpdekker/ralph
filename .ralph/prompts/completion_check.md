@@ -7,33 +7,80 @@ You are evaluating whether a feature implementation is complete and ready for de
 1. Read `.ralph/specs/active.md` to understand what was requested
 2. Read `.ralph/implementation_plan.md` to see the implementation plan
 3. Read `.ralph/review.md` (if present) to see review findings
+4. Read `.ralph/review_checklist.md` (if present) to see review coverage
 
 ---
 
 ## Your Task
 
-**Answer ONE question: Is the implementation complete?**
+**Assess the implementation completeness with confidence scoring and metrics.**
 
 Analyze whether all requirements from the spec have been implemented and the review has passed.
 
-### Criteria for COMPLETE
+---
 
-The implementation is complete if ALL of the following are true:
+## Evaluation Criteria
+
+### For COMPLETE status (confidence ≥ 0.90)
+
+ALL of the following must be true:
 
 1. **All spec requirements are implemented** - Every feature and requirement in `active.md` has corresponding working code
 2. **No unchecked plan items remain** - All items in `implementation_plan.md` are marked with `[x]`
-3. **No critical/blocking review issues** - If `review.md` exists, no "BLOCKING" or critical issues remain unaddressed
-4. **Tests pass** - The implementation has passing tests (verify by checking review findings or plan status)
+3. **No critical/blocking review issues** - If `review.md` exists, no "❌ BLOCKING" issues remain unaddressed
+4. **Tests pass** - The implementation has passing tests
+5. **No [BLOCKED] items** - No items are marked as blocked in the implementation plan
 
-### Criteria for INCOMPLETE
+### For HIGH CONFIDENCE (0.80 - 0.89)
 
-The implementation is incomplete if ANY of the following are true:
+Most requirements are met with minor items remaining:
 
-1. **Missing spec requirements** - Features from `active.md` are not yet implemented
-2. **Unchecked plan items** - There are remaining `[ ]` items in `implementation_plan.md`
-3. **Unresolved blocking issues** - Critical bugs or issues from review need fixing
-4. **Tests failing** - There are test failures that need to be addressed
-5. **Plan needs refinement** - The implementation plan is missing tasks needed to complete the spec
+- Core functionality is complete
+- Only `[QA-MINOR]` or `💡 CONSIDER` issues remain
+- All critical paths are tested
+
+### For MEDIUM CONFIDENCE (0.60 - 0.79)
+
+Significant progress but gaps remain:
+
+- Most requirements implemented
+- Some `⚠️ NEEDS ATTENTION` issues remain
+- Test coverage could be improved
+
+### For LOW CONFIDENCE (< 0.60)
+
+Major work remaining:
+
+- Core requirements not yet implemented
+- `❌ BLOCKING` issues present
+- Significant unchecked items in plan
+
+---
+
+## Metrics to Evaluate
+
+Count and report:
+
+1. **Spec Requirements**
+   - Total requirements in `active.md`
+   - Requirements with corresponding implementation
+
+2. **Plan Items**
+   - Total items in `implementation_plan.md`
+   - Completed items (`[x]`)
+   - Remaining items (`[ ]`)
+   - Blocked items (`[BLOCKED]`)
+
+3. **Review Status** (if review.md exists)
+   - Total issues found
+   - Blocking issues (`❌`)
+   - Attention issues (`⚠️`)
+   - Minor issues (`💡`)
+   - Resolved issues (`✅`)
+
+4. **Risk Assessment**
+   - High-risk items completed
+   - Known issues or caveats
 
 ---
 
@@ -41,15 +88,66 @@ The implementation is incomplete if ANY of the following are true:
 
 You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no other text.
 
-If complete:
-```
-{"complete": true, "reason": "Brief explanation of why implementation is complete"}
+### Complete with high confidence:
+```json
+{
+  "complete": true,
+  "confidence": 0.95,
+  "reason": "All 12 spec requirements implemented, all 23 plan items complete, 0 blocking issues",
+  "metrics": {
+    "spec_requirements_met": 12,
+    "spec_requirements_total": 12,
+    "plan_items_complete": 23,
+    "plan_items_total": 23,
+    "plan_items_blocked": 0,
+    "blocking_issues": 0,
+    "attention_issues": 2,
+    "minor_issues": 3
+  },
+  "caveats": [
+    "2 minor code quality suggestions remain",
+    "Manual testing of edge case X recommended"
+  ]
+}
 ```
 
-If incomplete:
+### Incomplete:
+```json
+{
+  "complete": false,
+  "confidence": 0.65,
+  "reason": "3 spec requirements not yet implemented, 2 blocking issues from review",
+  "metrics": {
+    "spec_requirements_met": 9,
+    "spec_requirements_total": 12,
+    "plan_items_complete": 18,
+    "plan_items_total": 23,
+    "plan_items_blocked": 1,
+    "blocking_issues": 2,
+    "attention_issues": 4,
+    "minor_issues": 1
+  },
+  "remaining": [
+    "Phase 2.3: User notifications not implemented",
+    "Phase 3.1: Caching layer incomplete",
+    "Blocking: SQL injection vulnerability in search handler",
+    "Blocked: Email service integration awaiting API key"
+  ],
+  "recommendation": "Address blocking security issue first, then complete Phase 2.3"
+}
 ```
-{"complete": false, "reason": "Brief explanation of what remains", "remaining": ["item 1", "item 2"]}
-```
+
+---
+
+## Decision Thresholds
+
+| Confidence | Complete? | Action |
+|------------|-----------|--------|
+| ≥ 0.95 | true | Ready for production |
+| 0.90 - 0.94 | true | Ready with minor caveats |
+| 0.80 - 0.89 | false | One more review-fix cycle recommended |
+| 0.60 - 0.79 | false | Continue build phase |
+| < 0.60 | false | May need plan refinement |
 
 ---
 
@@ -65,5 +163,6 @@ If incomplete:
 - When in doubt, err on the side of "incomplete" - it's better to do one more cycle than ship broken code
 - Focus on the spec requirements - the spec is the source of truth
 - Ignore nice-to-haves that weren't in the original spec
+- Factor in blocked items - they may indicate dependency issues
 
 **Respond with JSON only. No other output.**

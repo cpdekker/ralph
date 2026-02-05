@@ -55,22 +55,28 @@ The plan must use this structure:
 ## Overview
 Brief description of what we're building and current status.
 
+## Pre-flight Validation
+- [ ] All dependencies are available (libraries, APIs, etc.)
+- [ ] No breaking changes to existing interfaces
+- [ ] Test infrastructure can validate the changes
+- [ ] Estimated total iterations: X-Y
+
 ---
 
 ## Phase 0: User Review Fixes (only if user-review.md has content)
 Priority items from the user's manual review. Address these FIRST.
 
 ### 0.1 Bugs (from user testing)
-- [ ] [Bug found by user] - `path/to/file.ts:123`
-- [ ] [Another bug]
+- [ ] [Simple] [Bug found by user] - `path/to/file.ts:123`
+- [ ] [Medium] [Another bug]
 
 ### 0.2 Implementation Issues (user feedback)
-- [ ] [Thing that wasn't implemented correctly]
-- [ ] [Another issue]
+- [ ] [Complex] [Thing that wasn't implemented correctly]
+- [ ] [Simple] [Another issue]
 
 ### 0.3 User Focus Areas
-- [ ] [What user wants prioritized]
-- [ ] [Another focus area]
+- [ ] [Medium] [What user wants prioritized]
+- [ ] [Simple] [Another focus area]
 
 ---
 
@@ -78,25 +84,37 @@ Priority items from the user's manual review. Address these FIRST.
 Priority fixes from automated code review findings.
 
 ### 0.5.1 Critical Issues
-- [ ] [Bug/issue from review] - `path/to/file.ts:123`
-- [ ] [Another critical issue]
+- [ ] [Medium] [Bug/issue from review] - `path/to/file.ts:123`
+- [ ] [Complex] [Another critical issue]
 
 ### 0.5.2 Important Issues  
-- [ ] [Issue from review]
-- [ ] [Another issue]
+- [ ] [Simple] [Issue from review]
+- [ ] [Simple] [Another issue]
+
+---
+
+## Phase 0.6: High-Risk Items
+Items that could affect existing functionality or require careful testing.
+
+- [ ] [RISK] [Item that modifies shared code] - needs extra testing
+- [ ] [RISK] [Item that changes database schema]
+- [ ] [RISK] [Item that affects authentication/authorization]
 
 ---
 
 ## Phase 1: [Category Name]
 
 ### 1.1 [Task Group Name]
-- [ ] Specific action item
-- [ ] Another action item
+- [ ] [Simple] Specific action item (~1 iteration)
+- [ ] [Medium] Another action item (~2-3 iterations)
   - [ ] Sub-item if needed
+  - Dependencies: [1.0 Setup task]
+  - Enables: [1.2 Next task, 2.1 Other task]
 
 ### 1.2 [Next Task Group]
-- [ ] Action item
-- [ ] Action item
+- [ ] [Complex] Action item (~5+ iterations, consider decomposition)
+  - Dependencies: [1.1 Previous task]
+- [ ] [Simple] Action item
 
 ---
 
@@ -113,14 +131,38 @@ Priority fixes from automated code review findings.
 - Important context
 ```
 
+### Complexity Indicators
+
+Use these tags to estimate iteration count:
+
+| Tag | Estimated Iterations | When to Use |
+|-----|---------------------|-------------|
+| `[Simple]` | ~1 iteration | Single file, <50 lines, straightforward logic |
+| `[Medium]` | ~2-3 iterations | Multiple files, moderate complexity, may need debugging |
+| `[Complex]` | ~5+ iterations | Architectural changes, many files, needs decomposition |
+| `[RISK]` | +1-2 extra iterations | Modifies shared code, needs extra testing |
+
+### Dependency Tracking
+
+For complex features, track dependencies between items:
+
+```markdown
+- [ ] [Medium] Create UserRepository
+  - Dependencies: [1.1 User model must exist]
+  - Enables: [2.2 UserService, 3.1 Auth controller]
+```
+
 ### Requirements
 - **Use `- [ ]` checkboxes** for every actionable item (Ralph tracks progress by checking these)
+- **Add complexity tags** `[Simple]`, `[Medium]`, `[Complex]`, `[RISK]` to every item
 - **Group into numbered sections** (1.1, 1.2, 2.1, etc.) - Ralph completes one section per turn
 - **Be specific** - include file paths, function names, exact changes needed
 - **Order by dependency** - items that unblock others should come first within their phase
+- **Track dependencies** - for complex items, note what they depend on and what they enable
 - **Mark completed items** with `- [x]` if you find code that already implements them
 - **User review fixes FIRST** - if `.ralph/user-review.md` has content, include "Phase 0: User Review Fixes" as the highest priority
 - **Then automated review fixes** - if `.ralph/review.md` exists, include "Phase 0.5: Review Fixes" next
+- **Flag high-risk items** - include "Phase 0.6: High-Risk Items" for changes that need extra care
 - **No code samples** - describe *what* to implement, not *how*. The build loop handles implementation. Code blocks bloat the plan and waste context.
 
 ---
