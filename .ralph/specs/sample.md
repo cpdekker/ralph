@@ -329,3 +329,23 @@ If [feature] computation fails:
 | [Term 2] | [Definition] |
 | [Term 3] | [Definition] |
 | [Term 4] | [Definition] |
+
+---
+
+## Decomposition Hints
+
+If this spec is large (200+ lines), consider running `decompose` mode to break it into sub-specs.
+Below are common natural boundaries for decomposition:
+
+| Sub-Spec | Typical Content | Dependencies |
+|----------|----------------|--------------|
+| Data Model | Database schema, migrations, entity types | None |
+| API Endpoints | REST/GraphQL endpoints, request/response types | Data Model |
+| Business Logic | Services, validation, rules, workflows | Data Model, API |
+| Frontend Components | UI components, state management, forms | API Endpoints |
+| Integration & Testing | E2E tests, integration tests, manual test plan | All above |
+
+**Usage**: `node .ralph/run.js my-feature decompose`
+
+This creates `specs/my-feature/` with numbered sub-spec files and a `manifest.json` for tracking.
+Full mode will then process each sub-spec in order.

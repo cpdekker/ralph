@@ -19,6 +19,7 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
   - [Review-Fix Mode](#review-fix-mode)
   - [Debug Mode](#debug-mode)
   - [Full Mode](#full-mode)
+  - [Decompose Mode](#decompose-mode)
 - [Advanced Features](#advanced-features)
   - [Circuit Breaker](#circuit-breaker)
   - [Checkpointing](#checkpointing)
@@ -156,12 +157,13 @@ node .ralph/docker-build.js
 node .ralph/run.js
 
 # Or specify directly
-node .ralph/run.js my-feature plan      # Plan first
-node .ralph/run.js my-feature build     # Then build
-node .ralph/run.js my-feature review    # Review the implementation
+node .ralph/run.js my-feature plan       # Plan first
+node .ralph/run.js my-feature build      # Then build
+node .ralph/run.js my-feature review     # Review the implementation
 node .ralph/run.js my-feature review-fix # Fix review findings
-node .ralph/run.js my-feature debug     # Debug mode (single iteration, no commit)
-node .ralph/run.js my-feature full      # Full autonomous cycle
+node .ralph/run.js my-feature debug      # Debug mode (single iteration, no commit)
+node .ralph/run.js my-feature full       # Full autonomous cycle
+node .ralph/run.js my-feature decompose  # Break large spec into sub-specs
 ```
 
 > ⚠️ **After plan mode**: Review `.ralph/specs/active.md` and `implementation_plan.md`. Ensure you agree with every line—these drive the build phase.
@@ -192,14 +194,15 @@ Available specs:
 Enter spec name (or number): 1
 
 Modes:
-  1. plan      - Analyze codebase and create implementation plan
-  2. build     - Implement tasks from the plan
-  3. review    - Review implementation for bugs and issues
+  1. plan       - Analyze codebase and create implementation plan
+  2. build      - Implement tasks from the plan
+  3. review     - Review implementation for bugs and issues
   4. review-fix - Fix issues identified during review
-  5. debug     - Single iteration, verbose, no commits
-  6. full      - Full cycle: plan → build → review → check (repeats until complete)
+  5. debug      - Single iteration, verbose, no commits
+  6. full       - Full cycle: plan → build → review → check (repeats until complete)
+  7. decompose  - Break large spec into ordered sub-specs for full mode
 
-Select mode [1-6 or name] (default: build): plan
+Select mode [1-7 or name] (default: build): plan
 Number of iterations (default: 5): 
 ```
 
@@ -207,19 +210,20 @@ Number of iterations (default: 5):
 
 ```bash
 node .ralph/run.js <spec-name> [mode] [iterations] [--verbose]
-node .ralph/run.js [--plan|--build|--review|--full] [--verbose]  # Interactive with mode pre-selected
+node .ralph/run.js [--plan|--build|--review|--full|--decompose] [--verbose]  # Interactive with mode pre-selected
 ```
 
 | Argument | Description | Default |
 |----------|-------------|---------|
 | `spec-name` | Name of spec file (without `.md`) | Required (or interactive) |
-| `mode` | `plan`, `build`, `review`, `review-fix`, `debug`, or `full` | `build` |
-| `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) |
+| `mode` | `plan`, `build`, `review`, `review-fix`, `debug`, `full`, or `decompose` | `build` |
+| `iterations` | Number of loop iterations (or cycles for full mode) | 5 (plan) / 10 (build/review/full) / 1 (decompose) |
 | `--verbose` / `-v` | Show full Claude output (JSON stream) | Off (shows summary only) |
 | `--plan` | Pre-select plan mode in interactive | — |
 | `--build` | Pre-select build mode in interactive | — |
 | `--review` | Pre-select review mode in interactive | — |
 | `--full` / `--yolo` | Pre-select full mode in interactive | — |
+| `--decompose` | Pre-select decompose mode in interactive | — |
 | `--background` / `-b` | Run in background (Ralph clones repo) | Off (On for full mode) |
 | `--foreground` / `-f` / `--no-background` | Force foreground mode | — |
 
@@ -234,6 +238,7 @@ node .ralph/run.js my-feature review-fix   # Review-fix mode, 5 iterations
 node .ralph/run.js my-feature debug        # Debug mode (1 iteration, verbose, no commit)
 node .ralph/run.js my-feature full         # Full mode, 10 max cycles
 node .ralph/run.js my-feature full 20      # Full mode, 20 max cycles
+node .ralph/run.js my-feature decompose    # Decompose large spec into sub-specs
 node .ralph/run.js my-feature --verbose    # Build mode with full output
 ```
 
@@ -250,6 +255,7 @@ Add to your `package.json`:
     "ralph:review": "node .ralph/run.js --review",
     "ralph:full": "node .ralph/run.js --full",
     "ralph:yolo": "node .ralph/run.js --full",
+    "ralph:decompose": "node .ralph/run.js --decompose",
     "ralph:docker": "node .ralph/docker-build.js"
   }
 }
@@ -373,6 +379,7 @@ node .ralph/run.js <spec-name> full [max-cycles]
 | ✅ Exits early when spec is fully implemented |
 | ✅ Protected by circuit breaker |
 | ✅ **Runs in background by default** |
+| ✅ **Supports decomposed specs** — auto-cycles through sub-specs when manifest exists |
 
 **Default iterations per cycle**:
 | Phase | Default | Environment Variable |
@@ -383,6 +390,49 @@ node .ralph/run.js <spec-name> full [max-cycles]
 | Review-Fix | 5 | `FULL_REVIEWFIX_ITERS` |
 
 **When to use**: When you want fully autonomous implementation with minimal supervision.
+
+**With decomposed specs**: If a manifest exists (`specs/{name}/manifest.json`), full mode automatically:
+1. Runs **spec select** to pick the next sub-spec
+2. Completes one full cycle (plan → build → review → check) for that sub-spec
+3. Marks the sub-spec complete and selects the next one
+4. After all sub-specs complete, runs a **master completion check** to verify holistic coverage
+5. Warns you if a spec is large (200+ lines) but hasn't been decomposed yet
+
+### Decompose Mode
+
+```bash
+node .ralph/run.js <spec-name> decompose
+```
+
+| What it does | What it creates |
+|--------------|-----------------|
+| ✅ Analyzes master spec for natural boundaries | 📁 `specs/{name}/` directory |
+| ✅ Identifies dependencies between components | 📄 Numbered sub-spec files (`01-data-model.md`, etc.) |
+| ✅ Sizes each sub-spec for ~1 full mode cycle | 📄 `manifest.json` tracking progress |
+| ✅ Ensures every requirement is covered (no gaps) | |
+| ✅ Always runs in foreground | |
+
+**Flow**:
+```
+Large spec → decompose → sub-specs + manifest
+                              ↓
+Full mode → spec select → plan → build → review → check
+                              ↓
+                    Sub-spec complete? → next sub-spec
+                              ↓
+                    All done? → master completion check → done
+```
+
+**When to use**: Before running full mode on a large spec (200+ lines). Decomposition keeps each cycle focused and prevents context overflow.
+
+```bash
+# Step 1: Decompose the large spec
+node .ralph/run.js my-feature decompose
+
+# Step 2: Review the sub-specs in specs/my-feature/
+# Step 3: Run full mode — it will auto-cycle through sub-specs
+node .ralph/run.js my-feature full
+```
 
 ---
 
@@ -504,7 +554,11 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 ├── specs/
 │   ├── sample.md          # Template for new specs
 │   ├── my-feature.md      # Your feature specs
-│   └── active.md          # Auto-copied current spec
+│   ├── active.md          # Auto-copied current spec
+│   └── my-feature/        # Decomposed sub-specs (created by decompose mode)
+│       ├── manifest.json  # Sub-spec progress tracking
+│       ├── 01-data-model.md
+│       └── 02-api-endpoints.md
 ├── prompts/
 │   ├── plan.md            # Plan mode instructions
 │   ├── build.md           # Build mode instructions
@@ -518,6 +572,9 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 │   ├── review_api.md      # API specialist review
 │   ├── review_fix.md      # Review-fix mode instructions
 │   ├── completion_check.md # Full mode completion check
+│   ├── decompose.md       # Decompose mode - break spec into sub-specs
+│   ├── spec_select.md     # Sub-spec selection for decomposed full mode
+│   ├── master_completion_check.md # Final check across all sub-specs
 │   └── requirements.md    # Template for gathering requirements
 ├── run.js                 # Entry point (Node.js)
 ├── setup.js               # Interactive setup wizard

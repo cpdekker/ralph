@@ -12,6 +12,7 @@ Another turn will be started automatically to continue refining the plan.
 3. Read `.ralph/implementation_plan.md` (if present) to see current plan state
 4. Read `.ralph/review.md` (if present) to see findings from code review
 5. Read `.ralph/AGENTS.md` for project conventions
+6. **Sub-Spec Context**: If `active.md` references a master spec (look for "Master Spec:" header), also read the master spec file for broader context. This helps you understand how this sub-spec fits into the larger feature.
 
 ---
 
@@ -164,6 +165,18 @@ For complex features, track dependencies between items:
 - **Then automated review fixes** - if `.ralph/review.md` exists, include "Phase 0.5: Review Fixes" next
 - **Flag high-risk items** - include "Phase 0.6: High-Risk Items" for changes that need extra care
 - **No code samples** - describe *what* to implement, not *how*. The build loop handles implementation. Code blocks bloat the plan and waste context.
+
+---
+
+## Sub-Spec Scope Awareness
+
+**If `active.md` is a sub-spec** (contains "Master Spec:" and "Sub-Spec ID:" headers):
+
+- **Plan ONLY for the active sub-spec's requirements** — do not plan work for other sub-specs
+- **Respect the "Out of Scope" section** — items listed there are handled by other sub-specs
+- **Assume previous sub-spec work is complete** — if dependencies are listed, treat that code as existing and working
+- **Reference the master spec for context only** — understand the bigger picture, but scope your plan to THIS sub-spec
+- **Do not duplicate work** — if a dependency sub-spec already built something, use it, don't rebuild it
 
 ---
 

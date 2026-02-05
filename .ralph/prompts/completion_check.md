@@ -157,6 +157,17 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
 - **NEVER modify `.ralph/specs/*.md`** — All spec files are read-only
 - **NEVER modify any files** — This is a read-only check, do not write to any files
 
+## Sub-Spec Evaluation
+
+**If `active.md` is a sub-spec** (contains "Master Spec:" and "Sub-Spec ID:" headers):
+
+- Evaluate ONLY against **this sub-spec's requirements and acceptance criteria**
+- Do NOT evaluate against the full master spec — that is handled by the master completion check
+- Items listed in the "Out of Scope" section should be IGNORED for this evaluation
+- Assume dependencies from previous sub-specs are complete and working
+
+---
+
 ## Important
 
 - Be thorough but decisive

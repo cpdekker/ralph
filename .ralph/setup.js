@@ -279,6 +279,7 @@ async function setupNpmScripts(rl) {
         'ralph:review': 'node .ralph/run.js --review',
         'ralph:full': 'node .ralph/run.js --full',
         'ralph:yolo': 'node .ralph/run.js --full',
+        'ralph:decompose': 'node .ralph/run.js --decompose',
         'ralph:docker': 'node .ralph/docker-build.js',
         'ralph:setup': 'node .ralph/setup.js',
     };

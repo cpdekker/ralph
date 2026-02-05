@@ -86,6 +86,17 @@ function getAvailableSpecs() {
     .map(f => f.replace('.md', ''));
 }
 
+function getSpecDetails(specName) {
+  const manifestPath = path.join(rootDir, '.ralph', 'specs', specName, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    return manifest.progress || null;
+  } catch {
+    return null;
+  }
+}
+
 function validateSpec(spec) {
   const specPath = path.join(rootDir, '.ralph', 'specs', `${spec}.md`);
   return fs.existsSync(specPath);
@@ -373,7 +384,11 @@ async function interactivePrompt(preselectedMode = null) {
     console.log(`\x1b[32mAuto-selected spec: ${spec}\x1b[0m\n`);
   } else if (availableSpecs.length > 1) {
     console.log('Available specs:');
-    availableSpecs.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
+    availableSpecs.forEach((s, i) => {
+      const details = getSpecDetails(s);
+      const suffix = details ? ` \x1b[36m[${details.complete}/${details.total} sub-specs]\x1b[0m` : '';
+      console.log(`  ${i + 1}. ${s}${suffix}`);
+    });
     console.log('');
 
     while (!spec) {
@@ -410,10 +425,11 @@ async function interactivePrompt(preselectedMode = null) {
     console.log('  4. review-fix - Fix issues identified during review');
     console.log('  5. debug      - Single iteration, verbose, no commits');
     console.log('  6. full       - Full cycle: plan → build → review → check (repeats until complete)');
+    console.log('  7. decompose  - Break large spec into ordered sub-specs for full mode');
     console.log('');
 
     while (!mode) {
-      const input = await question('Select mode [1-6 or name] (default: build): ');
+      const input = await question('Select mode [1-7 or name] (default: build): ');
       const trimmed = input.trim().toLowerCase();
 
       if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
@@ -428,18 +444,25 @@ async function interactivePrompt(preselectedMode = null) {
         mode = 'debug';
       } else if (trimmed === '6' || trimmed === 'full' || trimmed === 'yolo') {
         mode = 'full';
+      } else if (trimmed === '7' || trimmed === 'decompose') {
+        mode = 'decompose';
       } else {
-        console.log('\x1b[31mInvalid selection. Enter 1-6 or mode name.\x1b[0m');
+        console.log('\x1b[31mInvalid selection. Enter 1-7 or mode name.\x1b[0m');
       }
     }
   }
 
-  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10)));
+  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'decompose' ? 1 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10))));
   const iterLabel = mode === 'full' ? 'max cycles' : 'iterations';
 
   // Debug mode doesn't need iteration prompt
   if (mode === 'debug') {
     console.log('\x1b[33m⚠️  Debug mode: 1 iteration, verbose, no commits\x1b[0m\n');
+  }
+
+  // Decompose mode runs once
+  if (mode === 'decompose') {
+    console.log('\x1b[35mDecompose mode: breaking spec into sub-specs\x1b[0m\n');
   }
   const iterInput = await question(`Number of ${iterLabel} (default: ${defaultIterations}): `);
   const iterations = parseInt(iterInput.trim()) || defaultIterations;
@@ -447,12 +470,12 @@ async function interactivePrompt(preselectedMode = null) {
   const verboseInput = await question('Verbose output? (default: No) [y/N]: ');
   const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
 
-  // Debug mode never runs in background
+  // Debug and decompose modes never run in background
   // Full mode defaults to background since it can run for hours
   let background = false;
 
-  if (mode === 'debug') {
-    console.log('\x1b[33mDebug mode always runs in foreground.\x1b[0m\n');
+  if (mode === 'debug' || mode === 'decompose') {
+    console.log(`\x1b[33m${mode.charAt(0).toUpperCase() + mode.slice(1)} mode always runs in foreground.\x1b[0m\n`);
     background = false;
   } else {
     const backgroundDefault = mode === 'full';
@@ -496,15 +519,16 @@ const reviewFlag = args.includes('--review');
 const reviewFixFlag = args.includes('--review-fix');
 const debugFlag = args.includes('--debug');
 const fullFlag = args.includes('--full') || args.includes('--yolo');
+const decomposeFlag = args.includes('--decompose');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
   a !== '--background' && a !== '-b' &&
   a !== '--no-background' && a !== '--foreground' && a !== '-f' &&
-  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo'
+  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo' && a !== '--decompose'
 );
 
 // Determine preselected mode from flags
-const preselectedMode = fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)))));
+const preselectedMode = decomposeFlag ? 'decompose' : (fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null))))));
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -565,6 +589,9 @@ if (filteredArgs.length === 0) {
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);
     }
+  } else if (filteredArgs[1] === 'decompose') {
+    mode = 'decompose';
+    iterations = 1;  // Decompose mode: single iteration
   } else if (filteredArgs[1] && isNumeric(filteredArgs[1])) {
     iterations = parseInt(filteredArgs[1]);
   }
@@ -573,7 +600,7 @@ if (filteredArgs.length === 0) {
   // Debug mode never runs in background
   // Use --no-background or --foreground to override
   const noBackground = args.includes('--no-background') || args.includes('--foreground') || args.includes('-f');
-  const useBackground = mode === 'debug' ? false : (noBackground ? false : (background || mode === 'full'));
+  const useBackground = (mode === 'debug' || mode === 'decompose') ? false : (noBackground ? false : (background || mode === 'full'));
 
   if (useBackground) {
     // Background mode - Ralph clones and works on his own copy

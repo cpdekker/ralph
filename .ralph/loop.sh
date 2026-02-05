@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -10,6 +10,7 @@
 #   ./loop.sh my-feature plan 10 --verbose  # Plan mode, 10 iterations, verbose
 #   ./loop.sh my-feature full               # Full mode: plan→build→review→check cycles
 #   ./loop.sh my-feature full 100           # Full mode with max 100 total iterations
+#   ./loop.sh my-feature decompose          # Decompose large spec into sub-specs
 #
 # Full mode options (via environment variables):
 #   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
@@ -31,7 +32,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -41,7 +42,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -54,10 +55,14 @@ if [ ! -f "$SPEC_FILE" ]; then
     exit 1
 fi
 
-# Copy spec to active.md
+# Copy spec to active.md (skip for decomposed specs in full mode — spec_select handles it)
 ACTIVE_SPEC="./.ralph/specs/active.md"
-echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
-cp "$SPEC_FILE" "$ACTIVE_SPEC"
+if [ "$MODE" = "full" ] && [ -f "./.ralph/specs/${SPEC_NAME}/manifest.json" ]; then
+    echo "Decomposed spec detected — spec_select will manage active.md"
+else
+    echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
+    cp "$SPEC_FILE" "$ACTIVE_SPEC"
+fi
 
 # Circuit breaker settings
 MAX_CONSECUTIVE_FAILURES=${MAX_CONSECUTIVE_FAILURES:-3}
@@ -83,6 +88,11 @@ elif [ "$MODE" = "debug" ]; then
     MAX_ITERATIONS=1
     VERBOSE=true
     NO_COMMIT=true
+elif [ "$MODE" = "decompose" ]; then
+    # Decompose mode: single iteration to break spec into sub-specs
+    PROMPT_FILE="./.ralph/prompts/decompose.md"
+    MAX_ITERATIONS=1
+    VERBOSE=true
 elif [ "$MODE" = "full" ]; then
     # Full mode: cycles of plan → build → review → completion check
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
@@ -126,7 +136,9 @@ fi
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
-if [ "$MODE" = "full" ]; then
+if [ "$MODE" = "decompose" ]; then
+    echo "Action:  Decompose spec into sub-specs"
+elif [ "$MODE" = "full" ]; then
     echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
 elif [ "$MODE" = "debug" ]; then
@@ -150,6 +162,15 @@ if [ "$MODE" = "full" ]; then
             exit 1
         fi
     done
+    # Check decomposition-specific prompts if manifest exists
+    if [ -f "./.ralph/specs/${SPEC_NAME}/manifest.json" ]; then
+        for pf in "./.ralph/prompts/spec_select.md" "./.ralph/prompts/master_completion_check.md"; do
+            if [ ! -f "$pf" ]; then
+                echo "Error: $pf not found (required for decomposed full mode)"
+                exit 1
+            fi
+        done
+    fi
     # Check for at least one review prompt (specialist or generic)
     if [ ! -f "./.ralph/prompts/review_qa.md" ] && [ ! -f "./.ralph/prompts/review.md" ]; then
         echo "Error: No review prompt found (need review_qa.md or review.md)"
@@ -228,7 +249,9 @@ save_state() {
   "last_update": "$now",
   "consecutive_failures": $CONSECUTIVE_FAILURES,
   "total_iterations": $TOTAL_ITERATIONS,
-  "error_count": ${ERROR_COUNT:-0}
+  "error_count": ${ERROR_COUNT:-0},
+  "is_decomposed": ${IS_DECOMPOSED:-false},
+  "current_subspec": "${CURRENT_SUBSPEC:-}"
 }
 EOF
 }
@@ -827,6 +850,188 @@ print_phase_banner() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SUB-SPEC DECOMPOSITION HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Check if a manifest.json exists for the current spec (decomposed spec)
+check_manifest_exists() {
+    local manifest_path="./.ralph/specs/${SPEC_NAME}/manifest.json"
+    if [ -f "$manifest_path" ]; then
+        return 0
+    fi
+    return 1
+}
+
+# Run spec_select.md prompt and parse the JSON result
+# Returns: 0=selected, 1=all_complete, 2=blocked
+run_spec_select() {
+    echo ""
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;35m  📋 SUB-SPEC SELECTION - Picking next sub-spec to work on\033[0m"
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+
+    local select_log="$TEMP_DIR/spec_select.log"
+    local select_result
+
+    if [ "$VERBOSE" = true ]; then
+        select_result=$(cat "./.ralph/prompts/spec_select.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>&1 | tee "$select_log")
+    else
+        echo -e "  \033[1;36m⏳\033[0m Selecting next sub-spec..."
+
+        select_result=$(cat "./.ralph/prompts/spec_select.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>"$select_log")
+    fi
+
+    # Parse Claude's JSON response
+    local json_text
+    json_text=$(echo "$select_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$select_result"
+    fi
+
+    local action=$(echo "$json_text" | jq -r '.action // empty' 2>/dev/null)
+    local sub_spec_name=$(echo "$json_text" | jq -r '.sub_spec_name // empty' 2>/dev/null)
+    local sub_spec_title=$(echo "$json_text" | jq -r '.sub_spec_title // empty' 2>/dev/null)
+    local progress_complete=$(echo "$json_text" | jq -r '.progress.complete // 0' 2>/dev/null)
+    local progress_total=$(echo "$json_text" | jq -r '.progress.total // 0' 2>/dev/null)
+
+    if [ "$action" = "select" ]; then
+        echo ""
+        echo -e "\033[1;32m  ✓ Selected: $sub_spec_name — $sub_spec_title\033[0m"
+        echo -e "\033[1;36m  Progress: $progress_complete/$progress_total sub-specs complete\033[0m"
+        echo ""
+        CURRENT_SUBSPEC="$sub_spec_name"
+        return 0  # Selected
+    elif [ "$action" = "all_complete" ]; then
+        echo ""
+        echo -e "\033[1;32m  ✓ All sub-specs complete! ($progress_total/$progress_total)\033[0m"
+        echo ""
+        return 1  # All complete
+    elif [ "$action" = "blocked" ]; then
+        local reason=$(echo "$json_text" | jq -r '.reason // "Unknown"' 2>/dev/null)
+        echo ""
+        echo -e "\033[1;31m  ✗ Blocked: $reason\033[0m"
+        echo ""
+        return 2  # Blocked
+    else
+        echo ""
+        echo -e "\033[1;31m  ✗ Unexpected spec_select response: $action\033[0m"
+        echo -e "\033[1;31m  Raw result: $json_text\033[0m"
+        echo ""
+        return 2  # Treat as blocked
+    fi
+}
+
+# Mark current sub-spec as complete in manifest.json
+mark_subspec_complete() {
+    local manifest_path="./.ralph/specs/${SPEC_NAME}/manifest.json"
+
+    if [ ! -f "$manifest_path" ]; then
+        echo -e "\033[1;31m  ✗ Manifest not found: $manifest_path\033[0m"
+        return 1
+    fi
+
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local subspec_name="${CURRENT_SUBSPEC}"
+
+    # Use jq to update the manifest
+    local updated
+    updated=$(jq --arg name "$subspec_name" --arg now "$now" '
+        .updated_at = $now |
+        (.sub_specs |= map(
+            if .name == $name then
+                .status = "complete" | .completed_at = $now
+            else . end
+        )) |
+        .progress.complete = ([.sub_specs[] | select(.status == "complete")] | length) |
+        .progress.in_progress = ([.sub_specs[] | select(.status == "in_progress")] | length) |
+        .progress.pending = ([.sub_specs[] | select(.status == "pending")] | length)
+    ' "$manifest_path" 2>/dev/null)
+    local jq_exit=$?
+
+    if [ $jq_exit -eq 0 ] && [ -n "$updated" ]; then
+        echo "$updated" > "$manifest_path"
+        echo -e "\033[1;32m  ✓ Marked $subspec_name as complete\033[0m"
+
+        git add "$manifest_path"
+        git commit -m "Complete sub-spec: $subspec_name"
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+    else
+        echo -e "\033[1;31m  ✗ Failed to update manifest\033[0m"
+        return 1
+    fi
+}
+
+# Run master completion check for decomposed specs
+run_master_completion_check() {
+    echo ""
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;33m  🔍 MASTER COMPLETION CHECK - Verifying all sub-specs cover the full spec\033[0m"
+    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+
+    local check_log="$TEMP_DIR/master_completion_check.log"
+    local check_result
+
+    if [ "$VERBOSE" = true ]; then
+        check_result=$(cat "./.ralph/prompts/master_completion_check.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>&1 | tee "$check_log")
+    else
+        echo -e "  \033[1;36m⏳\033[0m Running master completion check..."
+
+        check_result=$(cat "./.ralph/prompts/master_completion_check.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>"$check_log")
+    fi
+
+    # Parse Claude's JSON response
+    local json_text
+    json_text=$(echo "$check_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$check_result"
+    fi
+
+    local is_complete=$(echo "$json_text" | jq -r '.complete // false' 2>/dev/null)
+    local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
+    local reason=$(echo "$json_text" | jq -r '.reason // empty' 2>/dev/null)
+
+    if [ "$is_complete" = "true" ]; then
+        echo ""
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        echo -e "\033[1;32m  ✅ MASTER SPEC FULLY IMPLEMENTED!\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
+        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo ""
+        return 0  # Complete
+    else
+        echo ""
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        echo -e "\033[1;33m  ⚠ Master spec not yet fully satisfied\033[0m"
+        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+
+        # Show gaps if present
+        local gaps=$(echo "$json_text" | jq -r '.gaps[]? // empty' 2>/dev/null)
+        if [ -n "$gaps" ]; then
+            echo ""
+            echo -e "  \033[1;33mGaps found:\033[0m"
+            echo "$gaps" | while read -r gap; do
+                echo -e "    • $gap"
+            done
+        fi
+        echo ""
+        return 1  # Not complete
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # FULL MODE - Runs plan → build → review → check cycles
 # In full mode, MAX_ITERATIONS is treated as MAX_CYCLES (number of complete cycles)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -835,21 +1040,79 @@ if [ "$MODE" = "full" ]; then
     CYCLE=0
     MAX_CYCLES=$MAX_ITERATIONS  # Rename for clarity - in full mode, this is cycles not iterations
     IMPLEMENTATION_COMPLETE=false
-    
+    CURRENT_SUBSPEC=""
+
+    # Detect if this spec has been decomposed into sub-specs
+    IS_DECOMPOSED=false
+    if check_manifest_exists; then
+        IS_DECOMPOSED=true
+        MANIFEST_PATH="./.ralph/specs/${SPEC_NAME}/manifest.json"
+        echo ""
+        echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
+        echo -e "\033[1;35m║  📦 DECOMPOSED SPEC DETECTED                              ║\033[0m"
+        echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+        echo ""
+        # Show current progress from manifest
+        MANIFEST_TOTAL=$(jq -r '.progress.total // 0' "$MANIFEST_PATH" 2>/dev/null)
+        MANIFEST_COMPLETE=$(jq -r '.progress.complete // 0' "$MANIFEST_PATH" 2>/dev/null)
+        MANIFEST_IN_PROGRESS=$(jq -r '.progress.in_progress // 0' "$MANIFEST_PATH" 2>/dev/null)
+        MANIFEST_PENDING=$(jq -r '.progress.pending // 0' "$MANIFEST_PATH" 2>/dev/null)
+        echo -e "  Sub-specs: $MANIFEST_TOTAL total, \033[1;32m$MANIFEST_COMPLETE complete\033[0m, \033[1;33m$MANIFEST_IN_PROGRESS in progress\033[0m, \033[1;36m$MANIFEST_PENDING pending\033[0m"
+        echo ""
+    else
+        # Check if spec is large and suggest decomposition
+        SPEC_LINE_COUNT=$(wc -l < "$SPEC_FILE" 2>/dev/null || echo "0")
+        if [ "$SPEC_LINE_COUNT" -gt 200 ]; then
+            echo ""
+            echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+            echo -e "\033[1;33m  ⚠ LARGE SPEC DETECTED ($SPEC_LINE_COUNT lines)\033[0m"
+            echo -e "\033[1;33m  Consider running decompose mode first for better results:\033[0m"
+            echo -e "\033[1;33m    node .ralph/run.js $SPEC_NAME decompose\033[0m"
+            echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+            echo ""
+        fi
+    fi
+
     while [ "$IMPLEMENTATION_COMPLETE" = false ]; do
         CYCLE=$((CYCLE + 1))
-        
+
         # Check max cycles at the start of each cycle
         if [ $CYCLE -gt $MAX_CYCLES ]; then
             echo -e "\033[1;33mReached max cycles: $MAX_CYCLES\033[0m"
             break
         fi
-        
+
         # Check circuit breaker
         if check_circuit_breaker; then
             break
         fi
-        
+
+        # ─────────────────────────────────────────────────────────────────────
+        # SUB-SPEC SELECTION (decomposed specs only)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ "$IS_DECOMPOSED" = true ]; then
+            run_spec_select
+            SPEC_SELECT_RESULT=$?
+
+            if [ $SPEC_SELECT_RESULT -eq 1 ]; then
+                # All sub-specs complete — run master completion check
+                if run_master_completion_check; then
+                    IMPLEMENTATION_COMPLETE=true
+                    break
+                else
+                    echo -e "  \033[1;33m⚠ Master check found gaps. Continuing cycles...\033[0m"
+                    # The gaps will be addressed in the next cycle
+                    # spec_select should find something to work on, or we'll be stuck
+                fi
+            elif [ $SPEC_SELECT_RESULT -eq 2 ]; then
+                # Blocked — cannot proceed
+                echo -e "\033[1;31m  ✗ All remaining sub-specs are blocked. Human intervention required.\033[0m"
+                create_paused_state "All remaining sub-specs are blocked by unmet dependencies"
+                break
+            fi
+            # SPEC_SELECT_RESULT=0 means we selected a sub-spec, continue to plan phase
+        fi
+
         print_cycle_banner $CYCLE
         
         # ─────────────────────────────────────────────────────────────────────
@@ -1109,7 +1372,14 @@ if [ "$MODE" = "full" ]; then
         # COMPLETION CHECK
         # ─────────────────────────────────────────────────────────────────────
         if run_completion_check; then
-            IMPLEMENTATION_COMPLETE=true
+            if [ "$IS_DECOMPOSED" = true ]; then
+                # Mark current sub-spec as complete and loop to select next
+                mark_subspec_complete
+                echo -e "  \033[1;35m→\033[0m Sub-spec complete. Selecting next sub-spec..."
+                # Don't set IMPLEMENTATION_COMPLETE — let spec_select determine if all are done
+            else
+                IMPLEMENTATION_COMPLETE=true
+            fi
         else
             echo -e "  \033[1;35m→\033[0m Starting next cycle..."
         fi
