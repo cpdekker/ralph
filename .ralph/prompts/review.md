@@ -1,4 +1,4 @@
-# REVIEW MODE - Single Item Per Turn
+# REVIEW MODE - Multiple Items Per Turn
 
 ## Your Role
 
@@ -10,7 +10,7 @@ Think like someone who will be paged at 3am if this code breaks. Ask yourself: *
 
 ## Your Task This Turn
 
-**Review exactly ONE item from the review checklist, then STOP.**
+**Review UP TO 5 ITEMS from the review checklist using parallel subagents, then STOP.**
 
 ## Setup (do this first)
 
@@ -21,21 +21,23 @@ Think like someone who will be paged at 3am if this code breaks. Ask yourself: *
 
 ---
 
-## Execution (one item only)
+## Execution (up to 5 items per turn)
 
-1. **Pick ONE unchecked item** from `.ralph/review_checklist.md` — prioritize high-impact items (core functionality, complex logic, areas handling user data)
-2. **Read the relevant source files** — use subagents to thoroughly examine the implementation
-3. **Compare against the spec** — verify the implementation matches `.ralph/specs/active.md`
-4. **Apply your judgment** — identify anything that concerns you as a senior engineer
-5. **Update `.ralph/review_checklist.md`**:
-   - Mark the item complete with `[x]`
+1. **Select up to 5 unchecked items** from `.ralph/review_checklist.md` — prioritize high-impact items (core functionality, complex logic, areas handling user data)
+2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
+   - Each subagent reads the relevant source files
+   - Each subagent compares against the spec
+   - Each subagent identifies issues and concerns
+3. **Collect subagent findings** and synthesize the results
+4. **Update `.ralph/review_checklist.md`**:
+   - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count
    - Add any issues found to the Issues Log section
-6. **Update `.ralph/review.md`** — append your findings to the review document
-7. **Commit and push**:
+5. **Update `.ralph/review.md`** — append findings for ALL reviewed items
+6. **Commit and push**:
    ```bash
    git add .ralph/review_checklist.md .ralph/review.md
-   git commit -m "Review: [item reviewed]"
+   git commit -m "Review: [X items reviewed]"
    git push
    ```
 
@@ -140,25 +142,26 @@ When updating `.ralph/review.md`, use this format:
 
 ## STOP CONDITION
 
-**After completing ONE item and pushing, your turn is DONE.**
+**After reviewing up to 5 items and pushing, your turn is DONE.**
 
 Do NOT:
-- Start reviewing the next item
-- Pick up additional review tasks
+- Review more than 5 items per turn
 - Begin implementing fixes
+- Modify any source code
 
-The loop will start a fresh turn for the next item.
+The loop will start a fresh turn for the next batch of items.
 
 ---
 
 ## Guidelines
 
-- **Subagents**: Use up to 500 parallel Sonnet subagents for reading files and searching. Use Opus subagents for complex analysis.
+- **Parallel review**: Use Sonnet subagents to review up to 5 items simultaneously
 - **Be thorough**: Read the full implementation, not just the happy path
 - **Be specific**: Include file paths and line numbers in findings
 - **Use judgment**: Prioritize based on impact—not all issues are equal
 - **Reference spec**: Tie findings back to requirements when relevant
 - **Be constructive**: Provide actionable recommendations, not just criticism
+- **Batch efficiently**: Review related items together when possible
 
 ## Critical Rules
 
@@ -167,4 +170,4 @@ The loop will start a fresh turn for the next item.
 
 ## Remember
 
-This is an iterative loop. You handle ONE review item per turn. The loop will call you again for the next item. **Stop after your commit and push.**
+This is an iterative loop. You handle UP TO 5 review items per turn using parallel subagents. The loop will call you again for the next batch. **Stop after your commit and push.**

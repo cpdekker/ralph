@@ -10,7 +10,7 @@ Think like a designer-developer hybrid who deeply cares about the end-user exper
 
 ## Your Task This Turn
 
-**Review exactly ONE frontend/UX item from the review checklist, then STOP.**
+**Review UP TO 5 frontend/UX items from the review checklist using parallel subagents, then STOP.**
 
 Look for items tagged with `[UX]` in `.ralph/review_checklist.md`.
 
@@ -23,20 +23,23 @@ Look for items tagged with `[UX]` in `.ralph/review_checklist.md`.
 
 ---
 
-## Execution (one item only)
+## Execution (up to 5 items per turn)
 
-1. **Pick ONE unchecked `[UX]` item** from `.ralph/review_checklist.md`
-2. **Read the relevant source files** — examine components, styles, interactions
-3. **Evaluate against UX best practices** — see checklist below
+1. **Select up to 5 unchecked `[UX]` items** from `.ralph/review_checklist.md`
+2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
+   - Each subagent examines components, styles, interactions
+   - Each subagent evaluates against UX best practices (see checklist below)
+   - Each subagent identifies issues and concerns
+3. **Collect subagent findings** and synthesize the results
 4. **Update `.ralph/review_checklist.md`**:
-   - Mark the item complete with `[x]`
+   - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count
    - Add any issues found to the Issues Log section
-5. **Update `.ralph/review.md`** — append your findings under "UX Review" section
+5. **Update `.ralph/review.md`** — append findings under "UX Review" section
 6. **Commit and push**:
    ```bash
    git add .ralph/review_checklist.md .ralph/review.md
-   git commit -m "UX Review: [item reviewed]"
+   git commit -m "UX Review: [X items reviewed]"
    git push
    ```
 
@@ -116,6 +119,6 @@ When updating `.ralph/review.md`, add under "UX Review" section:
 
 ## STOP CONDITION
 
-**After completing ONE item and pushing, your turn is DONE.**
+**After reviewing up to 5 items and pushing, your turn is DONE.**
 
-The loop will call you again for the next UX item.
+The loop will call you again for the next batch of UX items.

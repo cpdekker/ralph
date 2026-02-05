@@ -66,7 +66,7 @@ elif [ "$MODE" = "full" ]; then
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
     FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-5}
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
-    FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-5}
+    FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-15}  # More iterations to cover all review items
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"

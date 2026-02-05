@@ -10,7 +10,7 @@ Think like someone who gets paid to break things. Ask yourself: *What could go w
 
 ## Your Task This Turn
 
-**Review exactly ONE item from the review checklist, then STOP.**
+**Review UP TO 5 items from the review checklist using parallel subagents, then STOP.**
 
 Look for items tagged with `[QA]` in `.ralph/review_checklist.md`, or any untagged items.
 
@@ -23,20 +23,23 @@ Look for items tagged with `[QA]` in `.ralph/review_checklist.md`, or any untagg
 
 ---
 
-## Execution (one item only)
+## Execution (up to 5 items per turn)
 
-1. **Pick ONE unchecked `[QA]` or untagged item** from `.ralph/review_checklist.md`
-2. **Read the relevant source files** — examine implementation and tests
-3. **Evaluate against quality best practices** — see checklist below
+1. **Select up to 5 unchecked `[QA]` or untagged items** from `.ralph/review_checklist.md`
+2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
+   - Each subagent examines implementation and tests
+   - Each subagent evaluates against quality best practices (see checklist below)
+   - Each subagent identifies bugs, edge cases, and issues
+3. **Collect subagent findings** and synthesize the results
 4. **Update `.ralph/review_checklist.md`**:
-   - Mark the item complete with `[x]`
+   - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count
    - Add any issues found to the Issues Log section
-5. **Update `.ralph/review.md`** — append your findings under "QA Review" section
+5. **Update `.ralph/review.md`** — append findings under "QA Review" section
 6. **Commit and push**:
    ```bash
    git add .ralph/review_checklist.md .ralph/review.md
-   git commit -m "QA Review: [item reviewed]"
+   git commit -m "QA Review: [X items reviewed]"
    git push
    ```
 
@@ -125,6 +128,6 @@ When updating `.ralph/review.md`, add under "QA Review" section:
 
 ## STOP CONDITION
 
-**After completing ONE item and pushing, your turn is DONE.**
+**After reviewing up to 5 items and pushing, your turn is DONE.**
 
-The loop will call you again for the next item.
+The loop will call you again for the next batch of items.

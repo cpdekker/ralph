@@ -10,7 +10,7 @@ Think like a DBA who has seen databases brought to their knees by poorly written
 
 ## Your Task This Turn
 
-**Review exactly ONE database/data item from the review checklist, then STOP.**
+**Review UP TO 5 database/data items from the review checklist using parallel subagents, then STOP.**
 
 Look for items tagged with `[DB]` in `.ralph/review_checklist.md`.
 
@@ -23,20 +23,23 @@ Look for items tagged with `[DB]` in `.ralph/review_checklist.md`.
 
 ---
 
-## Execution (one item only)
+## Execution (up to 5 items per turn)
 
-1. **Pick ONE unchecked `[DB]` item** from `.ralph/review_checklist.md`
-2. **Read the relevant source files** — examine queries, migrations, models
-3. **Evaluate against database best practices** — see checklist below
+1. **Select up to 5 unchecked `[DB]` items** from `.ralph/review_checklist.md`
+2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
+   - Each subagent examines queries, migrations, models
+   - Each subagent evaluates against database best practices (see checklist below)
+   - Each subagent identifies performance and integrity issues
+3. **Collect subagent findings** and synthesize the results
 4. **Update `.ralph/review_checklist.md`**:
-   - Mark the item complete with `[x]`
+   - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count
    - Add any issues found to the Issues Log section
-5. **Update `.ralph/review.md`** — append your findings under "Database Review" section
+5. **Update `.ralph/review.md`** — append findings under "Database Review" section
 6. **Commit and push**:
    ```bash
    git add .ralph/review_checklist.md .ralph/review.md
-   git commit -m "DB Review: [item reviewed]"
+   git commit -m "DB Review: [X items reviewed]"
    git push
    ```
 
@@ -123,6 +126,6 @@ When updating `.ralph/review.md`, add under "Database Review" section:
 
 ## STOP CONDITION
 
-**After completing ONE item and pushing, your turn is DONE.**
+**After reviewing up to 5 items and pushing, your turn is DONE.**
 
-The loop will call you again for the next database item.
+The loop will call you again for the next batch of database items.
