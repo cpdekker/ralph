@@ -18,6 +18,8 @@ This mode bridges the gap between review findings and the next build cycle—fix
 2. Read `.ralph/review.md` to see the review findings
 3. Read `.ralph/review_checklist.md` to see the full context
 4. Read `.ralph/AGENTS.md` for project conventions and build commands
+5. Read `.ralph/progress.txt` (if present) — context from prior iterations
+6. Read `.ralph/guardrails.md` (if present) — anti-patterns and constraints to respect
 
 ---
 
@@ -105,6 +107,12 @@ Address issues in this order:
    - **Recommendation**: [Suggested approach]
    ```
 3. Move on to the next issue
+
+### Update Cross-Iteration Memory
+
+After fixing issues:
+- Append to `.ralph/progress.txt`: what you fixed and why
+- If a fix revealed a pattern (e.g., "this codebase always needs X when changing Y"), add it to `.ralph/guardrails.md` under the appropriate section
 
 ---
 

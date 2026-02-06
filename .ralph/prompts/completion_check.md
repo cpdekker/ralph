@@ -8,6 +8,8 @@ You are evaluating whether a feature implementation is complete and ready for de
 2. Read `.ralph/implementation_plan.md` to see the implementation plan
 3. Read `.ralph/review.md` (if present) to see review findings
 4. Read `.ralph/review_checklist.md` (if present) to see review coverage
+5. Read `.ralph/progress.txt` (if present) — check for unresolved blockers
+6. Read `.ralph/guardrails.md` (if present) — check for unresolved known issues
 
 ---
 
@@ -30,6 +32,7 @@ ALL of the following must be true:
 3. **No critical/blocking review issues** - If `review.md` exists, no "❌ BLOCKING" issues remain unaddressed
 4. **Tests pass** - The implementation has passing tests
 5. **No [BLOCKED] items** - No items are marked as blocked in the implementation plan
+6. **No unresolved guardrail issues** - If `guardrails.md` has "Known Issues" entries, verify they've been addressed or are out of scope
 
 ### For HIGH CONFIDENCE (0.80 - 0.89)
 

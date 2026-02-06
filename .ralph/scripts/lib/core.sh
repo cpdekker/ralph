@@ -41,7 +41,11 @@ run_single_iteration() {
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
+            append_progress "iteration_failure" "phase=$phase_name iter=$iteration_num exit_code=$CLAUDE_EXIT"
             return 1
+        else
+            CONSECUTIVE_FAILURES=0  # Reset on success
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
     else
         echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $iteration_num..."
@@ -62,10 +66,12 @@ run_single_iteration() {
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
+            append_progress "iteration_failure" "phase=$phase_name iter=$iteration_num exit_code=$CLAUDE_EXIT"
             return 1
         else
             echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
             CONSECUTIVE_FAILURES=0  # Reset on success
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
     fi
 
@@ -77,6 +83,9 @@ run_single_iteration() {
         echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
         return 0
     fi
+
+    # Stage cross-iteration memory files
+    stage_ralph_memory
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
@@ -102,6 +111,10 @@ check_circuit_breaker() {
         echo -e "  \033[1;33mRalph has paused to prevent further issues.\033[0m"
         echo -e "  \033[1;33mHuman intervention required.\033[0m"
         echo ""
+
+        append_progress "circuit_breaker" "$CONSECUTIVE_FAILURES consecutive failures"
+        append_guardrail "Known Issues" "Circuit breaker tripped in $MODE phase after $CONSECUTIVE_FAILURES failures"
+        stage_ralph_memory
 
         create_paused_state "Circuit breaker tripped after $CONSECUTIVE_FAILURES consecutive failures"
 

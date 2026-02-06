@@ -82,3 +82,66 @@ EOF
     git commit -m "Ralph paused: $reason"
     git push origin "$CURRENT_BRANCH" 2>/dev/null || true
 }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CROSS-ITERATION MEMORY FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# append_progress() — Appends a timestamped entry to progress.txt
+append_progress() {
+    local event_type=$1  # e.g., session_start, iteration_success, phase_start, error, circuit_breaker
+    local message=$2
+    local progress_file="./.ralph/progress.txt"
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Create with header if missing
+    if [ ! -f "$progress_file" ]; then
+        cat > "$progress_file" << 'HEADER'
+# Ralph Progress Log
+<!-- This file is append-only cross-iteration memory. Claude reads this at the start of each iteration to understand prior context. -->
+HEADER
+    fi
+
+    echo "[$now] [$event_type] $message" >> "$progress_file"
+}
+
+# init_guardrails() — Creates guardrails.md template if missing
+init_guardrails() {
+    local guardrails_file="./.ralph/guardrails.md"
+    if [ ! -f "$guardrails_file" ]; then
+        cat > "$guardrails_file" << 'EOF'
+# Ralph Guardrails
+<!-- Accumulated lessons learned across iterations. Claude reads this before making decisions. Add new guardrails when you discover patterns that future iterations should know about. -->
+
+## Anti-Patterns
+<!-- Things that have been tried and failed. Don't repeat these. -->
+
+## Environment Quirks
+<!-- Project-specific gotchas discovered during implementation. -->
+
+## Architectural Constraints
+<!-- Decisions that were made and should not be revisited. -->
+
+## Known Issues
+<!-- Problems discovered but not yet resolved. Include context for future iterations. -->
+EOF
+    fi
+}
+
+# append_guardrail() — Adds a new entry to a guardrails section
+append_guardrail() {
+    local section=$1  # e.g., "Anti-Patterns", "Known Issues"
+    local entry=$2
+    local guardrails_file="./.ralph/guardrails.md"
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    init_guardrails
+
+    # Append under the matching section header using sed
+    sed -i "/^## $section$/a\\- [$now] $entry" "$guardrails_file"
+}
+
+# stage_ralph_memory() — Stages progress.txt and guardrails.md for git
+stage_ralph_memory() {
+    git add .ralph/progress.txt .ralph/guardrails.md 2>/dev/null || true
+}

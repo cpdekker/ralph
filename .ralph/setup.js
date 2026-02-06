@@ -575,18 +575,29 @@ function printSummary() {
     console.log(c('cyan', '  1.') + ' Review .ralph/AGENTS.md and refine if needed');
     console.log('');
     console.log(c('cyan', '  2.') + ' Create your feature spec:');
-    console.log(c('dim', '     • Copy .ralph/specs/sample.md to .ralph/specs/<feature-name>.md'));
-    console.log(c('dim', '     • Or use .ralph/prompts/requirements.md to gather requirements'));
+    console.log(c('dim', '     Option A: Use spec mode (recommended) — AI-assisted spec creation'));
+    if (hasPackageJson) {
+        console.log(c('dim', '       npm run ralph:spec'));
+    } else {
+        console.log(c('dim', '       node .ralph/run.js <feature-name> spec'));
+    }
+    console.log(c('dim', '     Option B: Copy .ralph/specs/sample.md to .ralph/specs/<feature-name>.md'));
+    console.log(c('dim', '     Option C: Use .ralph/prompts/requirements.md to gather requirements'));
+    console.log('');
+    console.log(c('dim', '     💡 Add reference files to .ralph/references/ before running spec mode:'));
+    console.log(c('dim', '        existing implementations, sample data, documentation, etc.'))
     console.log('');
     console.log(c('cyan', '  3.') + ' Run Ralph:');
     if (hasPackageJson) {
         console.log(c('dim', '     npm run ralph              ') + '# Interactive mode');
-        console.log(c('dim', '     npm run ralph:plan         ') + '# Interactive with plan mode');
-        console.log(c('dim', '     npm run ralph:build        ') + '# Interactive with build mode');
-        console.log(c('dim', '     npm run ralph:review       ') + '# Interactive with review mode');
+        console.log(c('dim', '     npm run ralph:spec         ') + '# Create spec interactively with AI');
+        console.log(c('dim', '     npm run ralph:plan         ') + '# Create implementation plan');
+        console.log(c('dim', '     npm run ralph:build        ') + '# Start building');
+        console.log(c('dim', '     npm run ralph:review       ') + '# Review implementation');
         console.log(c('dim', '     npm run ralph:full         ') + '# Full cycle: plan→build→review→check');
     } else {
         console.log(c('dim', '     node .ralph/run.js              ') + '# Interactive mode');
+        console.log(c('dim', '     node .ralph/run.js <spec> spec  ') + '# Create spec with AI wizard');
         console.log(c('dim', '     node .ralph/run.js <spec> plan  ') + '# Create implementation plan');
         console.log(c('dim', '     node .ralph/run.js <spec> build ') + '# Start building');
         console.log(c('dim', '     node .ralph/run.js <spec> review') + '# Review implementation');

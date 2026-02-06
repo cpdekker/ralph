@@ -7,12 +7,24 @@ You are researching a codebase and gathering best practices to inform the creati
 1. Read `.ralph/spec_seed.md` to understand what the user wants to build
 2. Read `.ralph/AGENTS.md` for project conventions, tech stack, and build commands
 3. Read `.ralph/specs/sample.md` to understand the target spec format
+4. Check `.ralph/references/` for any reference materials the user provided (existing implementations, sample data, documentation, etc.)
 
 ---
 
 ## Your Task
 
 **Conduct thorough research using subagents, then produce `.ralph/spec_research.md`.**
+
+### Phase 0: Reference Materials Analysis
+
+If `.ralph/references/` contains any files (beyond README.md):
+
+1. **Analyze all reference materials** — existing implementations, sample data, documentation
+2. **Extract patterns** — code structure, naming conventions, data formats
+3. **Identify requirements** — what the reference materials imply about the feature
+4. **Note discrepancies** — if references conflict with each other or the spec_seed, flag them
+
+Include findings in the "Reference Materials" section of spec_research.md.
 
 ### Phase 1: Codebase Analysis
 
@@ -73,6 +85,14 @@ Write your findings to `.ralph/spec_research.md` using this structure:
 
 ```markdown
 # Spec Research: [Feature Name]
+
+## Reference Materials Summary
+[If .ralph/references/ contained files, summarize what was found]
+- **Files analyzed**: [list of files]
+- **Key patterns extracted**: [patterns from existing implementations]
+- **Data formats identified**: [from sample data files]
+- **Requirements from docs**: [requirements from documentation]
+- **Discrepancies noted**: [any conflicts between references]
 
 ## Tech Stack Summary
 - **Language**: [e.g., TypeScript]

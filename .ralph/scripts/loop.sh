@@ -283,6 +283,10 @@ SESSION_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TOTAL_ITERATIONS=0
 ERROR_COUNT=0
 
+# Initialize cross-iteration memory
+append_progress "session_start" "spec=$SPEC_NAME mode=$MODE max_iters=$MAX_ITERATIONS"
+init_guardrails
+
 # Check for existing checkpoint
 if load_state; then
     echo -e "\033[1;36mℹ️  Previous session state found. Continuing from checkpoint.\033[0m"
@@ -327,6 +331,8 @@ if [ -n "$SETUP_PROMPT_FILE" ]; then
         fi
     fi
 
+    # Stage cross-iteration memory files and push setup changes
+    stage_ralph_memory
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
@@ -502,9 +508,11 @@ while true; do
         echo "  Check log: $LOG_FILE"
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         ERROR_COUNT=$((ERROR_COUNT + 1))
+        append_progress "iteration_failure" "phase=$MODE iter=$ITERATION exit_code=$CLAUDE_EXIT"
     else
         echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
-        CONSECUTIVE_FAILURES=0
+        CONSECUTIVE_FAILURES=0  # Reset on success
+        append_progress "iteration_success" "phase=$MODE iter=$ITERATION"
     fi
 
     # Generate and display summary
@@ -515,6 +523,9 @@ while true; do
         echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
         break
     fi
+
+    # Stage cross-iteration memory files
+    stage_ralph_memory
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
@@ -535,6 +546,9 @@ FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
 COMPLETED_ITERATIONS=$((ITERATION - 1))
 
 rm -f "$STATE_FILE"
+
+append_progress "session_end" "result=complete iters=$COMPLETED_ITERATIONS errors=$ERROR_COUNT"
+stage_ralph_memory
 
 echo ""
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
