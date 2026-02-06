@@ -9,6 +9,7 @@ You are refining a feature specification based on user feedback, answered questi
 3. Read `.ralph/spec_research.md` — codebase analysis and best practices
 4. Read `.ralph/spec_questions.md` — questions with any user answers
 5. Read `.ralph/user-review.md` (if present) — freeform user feedback on the spec
+6. Check `.ralph/references/` for any new reference materials added since the last iteration
 
 ---
 
