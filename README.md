@@ -154,7 +154,7 @@ A sample prompt template to work off of is defined in `.ralph/prompts/requiremen
 ### 5. Build the Docker image
 
 ```bash
-node .ralph/docker-build.js
+node .ralph/docker/build.js
 ```
 
 ### 6. Run Ralph
@@ -268,7 +268,7 @@ Add to your `package.json`:
     "ralph:yolo": "node .ralph/run.js --full",
     "ralph:decompose": "node .ralph/run.js --decompose",
     "ralph:spec": "node .ralph/run.js --spec",
-    "ralph:docker": "node .ralph/docker-build.js"
+    "ralph:docker": "node .ralph/docker/build.js"
   }
 }
 ```
@@ -627,31 +627,38 @@ Then run **1-3 plan iterations** to have Ralph research and formalize your notes
 ├── prompts/
 │   ├── plan.md            # Plan mode instructions
 │   ├── build.md           # Build mode instructions
-│   ├── review_setup.md    # Review mode setup (tags items by specialist)
-│   ├── review.md          # General review fallback
-│   ├── review_ux.md       # UX/Frontend specialist review
-│   ├── review_db.md       # Database specialist review
-│   ├── review_qa.md       # QA specialist review (default)
-│   ├── review_security.md # Security specialist review
-│   ├── review_perf.md     # Performance specialist review
-│   ├── review_api.md      # API specialist review
-│   ├── review_fix.md      # Review-fix mode instructions
-│   ├── completion_check.md # Full mode completion check
 │   ├── decompose.md       # Decompose mode - break spec into sub-specs
-│   ├── spec_select.md     # Sub-spec selection for decomposed full mode
+│   ├── completion_check.md # Full mode completion check
 │   ├── master_completion_check.md # Final check across all sub-specs
+│   ├── spec_select.md     # Sub-spec selection for decomposed full mode
 │   ├── requirements.md    # Template for gathering requirements
-│   ├── spec_research.md   # Spec mode: codebase research
-│   ├── spec_draft.md      # Spec mode: generate spec draft
-│   ├── spec_refine.md     # Spec mode: refine with feedback
-│   ├── spec_review.md     # Spec mode: quality review
-│   ├── spec_review_fix.md # Spec mode: fix review issues
-│   └── spec_signoff.md    # Spec mode: readiness check
+│   ├── review/
+│   │   ├── general.md     # General review fallback
+│   │   ├── setup.md       # Review mode setup (tags items by specialist)
+│   │   ├── fix.md         # Review-fix mode instructions
+│   │   ├── security.md    # Security specialist review
+│   │   ├── ux.md          # UX/Frontend specialist review
+│   │   ├── db.md          # Database specialist review
+│   │   ├── perf.md        # Performance specialist review
+│   │   ├── api.md         # API specialist review
+│   │   └── qa.md          # QA specialist review (default)
+│   └── spec/
+│       ├── research.md    # Spec mode: codebase research
+│       ├── draft.md       # Spec mode: generate spec draft
+│       ├── refine.md      # Spec mode: refine with feedback
+│       ├── review.md      # Spec mode: quality review
+│       ├── review_fix.md  # Spec mode: fix review issues
+│       └── signoff.md     # Spec mode: readiness check
 ├── run.js                 # Entry point (Node.js)
 ├── setup.js               # Interactive setup wizard
-├── loop.sh                # Iteration loop (runs in Docker)
-├── Dockerfile             # Container definition
-└── docker-compose.yml     # Docker compose config
+├── docker/
+│   ├── Dockerfile         # Container definition
+│   ├── docker-compose.yml # Docker compose config
+│   ├── entrypoint.sh      # Docker entrypoint
+│   ├── build.js           # Standalone image builder
+│   └── README.md          # Docker documentation
+└── scripts/
+    └── loop.sh            # Iteration loop (runs in Docker)
 ```
 
 ---
@@ -751,12 +758,12 @@ A living checklist that Ralph updates:
 
 ## Docker Image Updates
 
-**Rebuild required** (`node .ralph/docker-build.js`):
+**Rebuild required** (`node .ralph/docker/build.js`):
 - Update Claude Code CLI version
-- Modify `Dockerfile` or `entrypoint.sh`
+- Modify `docker/Dockerfile` or `docker/entrypoint.sh`
 
 **No rebuild needed** (mounted/passed at runtime):
-- All other `.ralph/` files (loop.sh, prompts, specs, AGENTS.md)
+- All other `.ralph/` files (scripts/loop.sh, prompts, specs, AGENTS.md)
 - `.env` credentials (passed via `--env-file`)
 
 ---
@@ -781,7 +788,7 @@ Create the spec at `.ralph/specs/{spec-name}.md`
 
 ```bash
 # Ensure Docker is running, then:
-docker build -t ralph-wiggum -f .ralph/Dockerfile .
+docker build -t ralph-wiggum -f .ralph/docker/Dockerfile .
 ```
 
 ### "bad interpreter" error (Windows)

@@ -110,7 +110,7 @@ function checkDockerImage(targetImageName = imageName) {
     });
     if (!images.split('\n').includes(targetImageName)) {
       console.log(`Building ${targetImageName} image...`);
-      execSync(`docker build -t ${targetImageName} -f .ralph/Dockerfile .`, {
+      execSync(`docker build -t ${targetImageName} -f .ralph/docker/Dockerfile .`, {
         stdio: 'inherit',
         cwd: rootDir,
       });
@@ -359,7 +359,7 @@ function runRalphBackground(spec, mode, iterations, verbose) {
     '-e', `RALPH_BRANCH=${targetBranch}`,
     '-e', `RALPH_BASE_BRANCH=${baseBranch}`,
     backgroundImageName,
-    'bash', './.ralph/loop.sh',
+    'bash', './.ralph/scripts/loop.sh',
     spec,
     mode,
     String(iterations),
@@ -453,7 +453,7 @@ function runRalph(spec, mode, iterations, verbose) {
     '-w',
     '/workspace',
     imageName,
-    'bash', './.ralph/loop.sh',
+    'bash', './.ralph/scripts/loop.sh',
     spec,
     mode,
     String(iterations),

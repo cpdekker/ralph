@@ -82,11 +82,11 @@ if [ "$MODE" = "plan" ]; then
     PROMPT_FILE="./.ralph/prompts/plan.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-5}
 elif [ "$MODE" = "review" ]; then
-    SETUP_PROMPT_FILE="./.ralph/prompts/review_setup.md"
-    PROMPT_FILE="./.ralph/prompts/review.md"
+    SETUP_PROMPT_FILE="./.ralph/prompts/review/setup.md"
+    PROMPT_FILE="./.ralph/prompts/review/general.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
 elif [ "$MODE" = "review-fix" ]; then
-    PROMPT_FILE="./.ralph/prompts/review_fix.md"
+    PROMPT_FILE="./.ralph/prompts/review/fix.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-5}
 elif [ "$MODE" = "debug" ]; then
     # Debug mode: single iteration, verbose, no commit/push
@@ -172,7 +172,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 # Verify prompt file(s) exist
 if [ "$MODE" = "spec" ]; then
     # Spec mode uses its own set of prompt files
-    for pf in "./.ralph/prompts/spec_research.md" "./.ralph/prompts/spec_draft.md" "./.ralph/prompts/spec_refine.md" "./.ralph/prompts/spec_review.md" "./.ralph/prompts/spec_review_fix.md" "./.ralph/prompts/spec_signoff.md"; do
+    for pf in "./.ralph/prompts/spec/research.md" "./.ralph/prompts/spec/draft.md" "./.ralph/prompts/spec/refine.md" "./.ralph/prompts/spec/review.md" "./.ralph/prompts/spec/review_fix.md" "./.ralph/prompts/spec/signoff.md"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for spec mode)"
             exit 1
@@ -185,7 +185,7 @@ if [ "$MODE" = "spec" ]; then
     fi
 elif [ "$MODE" = "full" ]; then
     # Full mode uses multiple prompt files
-    for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review_setup.md" "./.ralph/prompts/completion_check.md"; do
+    for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review/setup.md" "./.ralph/prompts/completion_check.md"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for full mode)"
             exit 1
@@ -201,20 +201,20 @@ elif [ "$MODE" = "full" ]; then
         done
     fi
     # Check for at least one review prompt (specialist or generic)
-    if [ ! -f "./.ralph/prompts/review_qa.md" ] && [ ! -f "./.ralph/prompts/review.md" ]; then
-        echo "Error: No review prompt found (need review_qa.md or review.md)"
+    if [ ! -f "./.ralph/prompts/review/qa.md" ] && [ ! -f "./.ralph/prompts/review/general.md" ]; then
+        echo "Error: No review prompt found (need review/qa.md or review/general.md)"
         exit 1
     fi
     # Show which specialist prompts are available
     echo ""
     echo "Review specialists available:"
-    [ -f "./.ralph/prompts/review_ux.md" ] && echo -e "  \033[1;35m✓\033[0m UX Expert (review_ux.md)"
-    [ -f "./.ralph/prompts/review_db.md" ] && echo -e "  \033[1;36m✓\033[0m DB Expert (review_db.md)"
-    [ -f "./.ralph/prompts/review_qa.md" ] && echo -e "  \033[1;33m✓\033[0m QA Expert (review_qa.md)"
-    [ -f "./.ralph/prompts/review_security.md" ] && echo -e "  \033[1;31m✓\033[0m Security Expert (review_security.md)"
-    [ -f "./.ralph/prompts/review_perf.md" ] && echo -e "  \033[1;32m✓\033[0m Performance Expert (review_perf.md)"
-    [ -f "./.ralph/prompts/review_api.md" ] && echo -e "  \033[1;34m✓\033[0m API Expert (review_api.md)"
-    [ -f "./.ralph/prompts/review.md" ] && echo -e "  \033[1;37m✓\033[0m General (review.md - fallback)"
+    [ -f "./.ralph/prompts/review/ux.md" ] && echo -e "  \033[1;35m✓\033[0m UX Expert (review/ux.md)"
+    [ -f "./.ralph/prompts/review/db.md" ] && echo -e "  \033[1;36m✓\033[0m DB Expert (review/db.md)"
+    [ -f "./.ralph/prompts/review/qa.md" ] && echo -e "  \033[1;33m✓\033[0m QA Expert (review/qa.md)"
+    [ -f "./.ralph/prompts/review/security.md" ] && echo -e "  \033[1;31m✓\033[0m Security Expert (review/security.md)"
+    [ -f "./.ralph/prompts/review/perf.md" ] && echo -e "  \033[1;32m✓\033[0m Performance Expert (review/perf.md)"
+    [ -f "./.ralph/prompts/review/api.md" ] && echo -e "  \033[1;34m✓\033[0m API Expert (review/api.md)"
+    [ -f "./.ralph/prompts/review/general.md" ] && echo -e "  \033[1;37m✓\033[0m General (review/general.md - fallback)"
     echo ""
 else
     if [ ! -f "$PROMPT_FILE" ]; then
@@ -1076,13 +1076,13 @@ run_spec_signoff_check() {
     local check_result
 
     if [ "$VERBOSE" = true ]; then
-        check_result=$(cat "./.ralph/prompts/spec_signoff.md" | claude -p \
+        check_result=$(cat "./.ralph/prompts/spec/signoff.md" | claude -p \
             --dangerously-skip-permissions \
             --output-format=json 2>&1 | tee "$check_log")
     else
         echo -e "  \033[1;36m⏳\033[0m Checking if spec is ready for implementation..."
 
-        check_result=$(cat "./.ralph/prompts/spec_signoff.md" | claude -p \
+        check_result=$(cat "./.ralph/prompts/spec/signoff.md" | claude -p \
             --dangerously-skip-permissions \
             --output-format=json 2>"$check_log")
     fi
@@ -1148,7 +1148,7 @@ if [ "$MODE" = "spec" ]; then
         RESEARCH_ITERATION=$((RESEARCH_ITERATION + 1))
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-        if ! run_single_iteration "./.ralph/prompts/spec_research.md" $TOTAL_ITERATIONS "RESEARCH ($RESEARCH_ITERATION/$SPEC_RESEARCH_ITERS)"; then
+        if ! run_single_iteration "./.ralph/prompts/spec/research.md" $TOTAL_ITERATIONS "RESEARCH ($RESEARCH_ITERATION/$SPEC_RESEARCH_ITERS)"; then
             echo -e "  \033[1;31m✗\033[0m Research phase failed"
             if check_circuit_breaker; then
                 break
@@ -1168,7 +1168,7 @@ if [ "$MODE" = "spec" ]; then
         DRAFT_ITERATION=$((DRAFT_ITERATION + 1))
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-        if ! run_single_iteration "./.ralph/prompts/spec_draft.md" $TOTAL_ITERATIONS "DRAFT ($DRAFT_ITERATION/$SPEC_DRAFT_ITERS)"; then
+        if ! run_single_iteration "./.ralph/prompts/spec/draft.md" $TOTAL_ITERATIONS "DRAFT ($DRAFT_ITERATION/$SPEC_DRAFT_ITERS)"; then
             echo -e "  \033[1;31m✗\033[0m Draft phase failed"
             if check_circuit_breaker; then
                 break
@@ -1222,7 +1222,7 @@ if [ "$MODE" = "spec" ]; then
             fi
         fi
 
-        if ! run_single_iteration "./.ralph/prompts/spec_refine.md" $TOTAL_ITERATIONS "REFINE ($REFINE_ITERATION/$SPEC_REFINE_ITERS)"; then
+        if ! run_single_iteration "./.ralph/prompts/spec/refine.md" $TOTAL_ITERATIONS "REFINE ($REFINE_ITERATION/$SPEC_REFINE_ITERS)"; then
             echo -e "  \033[1;31m✗\033[0m Refine iteration failed"
             if check_circuit_breaker; then
                 break
@@ -1242,7 +1242,7 @@ if [ "$MODE" = "spec" ]; then
         REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-        if ! run_single_iteration "./.ralph/prompts/spec_review.md" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
+        if ! run_single_iteration "./.ralph/prompts/spec/review.md" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
             echo -e "  \033[1;31m✗\033[0m Review phase failed"
             if check_circuit_breaker; then
                 break
@@ -1274,7 +1274,7 @@ if [ "$MODE" = "spec" ]; then
             REVIEWFIX_ITERATION=$((REVIEWFIX_ITERATION + 1))
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-            if ! run_single_iteration "./.ralph/prompts/spec_review_fix.md" $TOTAL_ITERATIONS "SPEC REVIEW-FIX ($REVIEWFIX_ITERATION/$SPEC_REVIEWFIX_ITERS)"; then
+            if ! run_single_iteration "./.ralph/prompts/spec/review_fix.md" $TOTAL_ITERATIONS "SPEC REVIEW-FIX ($REVIEWFIX_ITERATION/$SPEC_REVIEWFIX_ITERS)"; then
                 echo -e "  \033[1;31m✗\033[0m Review-fix iteration failed"
                 if check_circuit_breaker; then
                     break
@@ -1492,12 +1492,12 @@ if [ "$MODE" = "full" ]; then
         SETUP_LOG_FILE="$TEMP_DIR/review_setup_cycle_${CYCLE}.log"
         
         if [ "$VERBOSE" = true ]; then
-            cat "./.ralph/prompts/review_setup.md" | claude -p \
+            cat "./.ralph/prompts/review/setup.md" | claude -p \
                 --dangerously-skip-permissions \
                 --output-format=stream-json \
                 --verbose 2>&1 | tee "$SETUP_LOG_FILE"
         else
-            cat "./.ralph/prompts/review_setup.md" | claude -p \
+            cat "./.ralph/prompts/review/setup.md" | claude -p \
                 --dangerously-skip-permissions \
                 --output-format=stream-json \
                 --verbose > "$SETUP_LOG_FILE" 2>&1 &
@@ -1540,40 +1540,40 @@ if [ "$MODE" = "full" ]; then
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
                 security)
-                    REVIEW_PROMPT="./.ralph/prompts/review_security.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/security.md"
                     SPECIALIST_NAME="Security"
                     SPECIALIST_COLOR="\033[1;31m"  # Red
                     ;;
                 ux)
-                    REVIEW_PROMPT="./.ralph/prompts/review_ux.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/ux.md"
                     SPECIALIST_NAME="UX"
                     SPECIALIST_COLOR="\033[1;35m"  # Magenta
                     ;;
                 db)
-                    REVIEW_PROMPT="./.ralph/prompts/review_db.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/db.md"
                     SPECIALIST_NAME="DB"
                     SPECIALIST_COLOR="\033[1;36m"  # Cyan
                     ;;
                 perf)
-                    REVIEW_PROMPT="./.ralph/prompts/review_perf.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/perf.md"
                     SPECIALIST_NAME="Performance"
                     SPECIALIST_COLOR="\033[1;32m"  # Green
                     ;;
                 api)
-                    REVIEW_PROMPT="./.ralph/prompts/review_api.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/api.md"
                     SPECIALIST_NAME="API"
                     SPECIALIST_COLOR="\033[1;34m"  # Blue
                     ;;
                 *)
-                    REVIEW_PROMPT="./.ralph/prompts/review_qa.md"
+                    REVIEW_PROMPT="./.ralph/prompts/review/qa.md"
                     SPECIALIST_NAME="QA"
                     SPECIALIST_COLOR="\033[1;33m"  # Yellow
                     ;;
             esac
-            
+
             # Fallback to generic review.md if specialist prompt doesn't exist
             if [ ! -f "$REVIEW_PROMPT" ]; then
-                REVIEW_PROMPT="./.ralph/prompts/review.md"
+                REVIEW_PROMPT="./.ralph/prompts/review/general.md"
                 SPECIALIST_NAME="General"
                 SPECIALIST_COLOR="\033[1;37m"
             fi
@@ -1635,7 +1635,7 @@ if [ "$MODE" = "full" ]; then
                     echo -e "  \033[1;34mℹ\033[0m  Remaining: \033[1;31m❌ $REMAINING_BLOCKING\033[0m  \033[1;33m⚠️ $REMAINING_ATTENTION\033[0m"
                 fi
 
-                if ! run_single_iteration "./.ralph/prompts/review_fix.md" $TOTAL_ITERATIONS "REVIEW-FIX ($REVIEWFIX_ITERATION/$FULL_REVIEWFIX_ITERS)"; then
+                if ! run_single_iteration "./.ralph/prompts/review/fix.md" $TOTAL_ITERATIONS "REVIEW-FIX ($REVIEWFIX_ITERATION/$FULL_REVIEWFIX_ITERS)"; then
                     echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
                     if check_circuit_breaker; then
                         PHASE_ERROR=true
@@ -1757,34 +1757,34 @@ while true; do
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
                 security)
-                    PROMPT_FILE="./.ralph/prompts/review_security.md"
+                    PROMPT_FILE="./.ralph/prompts/review/security.md"
                     echo -e "  \033[1;31m🔍 Specialist: Security Expert\033[0m"
                     ;;
                 ux)
-                    PROMPT_FILE="./.ralph/prompts/review_ux.md"
+                    PROMPT_FILE="./.ralph/prompts/review/ux.md"
                     echo -e "  \033[1;35m🔍 Specialist: UX Expert\033[0m"
                     ;;
                 db)
-                    PROMPT_FILE="./.ralph/prompts/review_db.md"
+                    PROMPT_FILE="./.ralph/prompts/review/db.md"
                     echo -e "  \033[1;36m🔍 Specialist: DB Expert\033[0m"
                     ;;
                 perf)
-                    PROMPT_FILE="./.ralph/prompts/review_perf.md"
+                    PROMPT_FILE="./.ralph/prompts/review/perf.md"
                     echo -e "  \033[1;32m🔍 Specialist: Performance Expert\033[0m"
                     ;;
                 api)
-                    PROMPT_FILE="./.ralph/prompts/review_api.md"
+                    PROMPT_FILE="./.ralph/prompts/review/api.md"
                     echo -e "  \033[1;34m🔍 Specialist: API Expert\033[0m"
                     ;;
                 *)
-                    PROMPT_FILE="./.ralph/prompts/review_qa.md"
+                    PROMPT_FILE="./.ralph/prompts/review/qa.md"
                     echo -e "  \033[1;33m🔍 Specialist: QA Expert\033[0m"
                     ;;
             esac
-            
+
             # Fallback to generic review.md if specialist prompt doesn't exist
             if [ ! -f "$PROMPT_FILE" ]; then
-                PROMPT_FILE="./.ralph/prompts/review.md"
+                PROMPT_FILE="./.ralph/prompts/review/general.md"
                 echo -e "  \033[1;37m🔍 Specialist: General\033[0m"
             fi
         else
