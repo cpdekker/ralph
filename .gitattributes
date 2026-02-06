@@ -4,13 +4,13 @@
 # Shell scripts must use LF line endings (for Docker/Linux)
 *.sh text eol=lf
 
-# Dockerfile must use LF
+# Dockerfiles must use LF
 Dockerfile text eol=lf
+**/Dockerfile text eol=lf
 
 # Keep these as LF for consistency in Docker environment
-.ralph/*.sh text eol=lf
-.ralph/entrypoint.sh text eol=lf
-.ralph/loop.sh text eol=lf
+.ralph/scripts/*.sh text eol=lf
+.ralph/docker/entrypoint.sh text eol=lf
 
 # Node.js files can be auto-detected
 *.js text

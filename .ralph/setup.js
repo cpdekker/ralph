@@ -279,7 +279,9 @@ async function setupNpmScripts(rl) {
         'ralph:review': 'node .ralph/run.js --review',
         'ralph:full': 'node .ralph/run.js --full',
         'ralph:yolo': 'node .ralph/run.js --full',
-        'ralph:docker': 'node .ralph/docker-build.js',
+        'ralph:decompose': 'node .ralph/run.js --decompose',
+        'ralph:spec': 'node .ralph/run.js --spec',
+        'ralph:docker': 'node .ralph/docker/build.js',
         'ralph:setup': 'node .ralph/setup.js',
     };
 
@@ -476,7 +478,7 @@ async function buildDockerImage(rl) {
     const build = await confirm(rl, 'Would you like to build the Docker image now?', true);
 
     if (!build) {
-        printInfo('Run "node .ralph/docker-build.js" later to build.');
+        printInfo('Run "node .ralph/docker/build.js" later to build.');
         return;
     }
 
@@ -485,14 +487,14 @@ async function buildDockerImage(rl) {
     console.log('');
 
     try {
-        execSync(`docker build -t ${imageName} -f .ralph/Dockerfile .`, {
+        execSync(`docker build -t ${imageName} -f .ralph/docker/Dockerfile .`, {
             cwd: rootDir,
             stdio: 'inherit',
         });
         console.log('');
         printSuccess(`Docker image '${imageName}' built successfully`);
     } catch {
-        printError('Docker build failed. Try running "node .ralph/docker-build.js" manually.');
+        printError('Docker build failed. Try running "node .ralph/docker/build.js" manually.');
     }
 }
 

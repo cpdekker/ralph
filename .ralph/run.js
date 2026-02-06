@@ -86,6 +86,17 @@ function getAvailableSpecs() {
     .map(f => f.replace('.md', ''));
 }
 
+function getSpecDetails(specName) {
+  const manifestPath = path.join(rootDir, '.ralph', 'specs', specName, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) return null;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    return manifest.progress || null;
+  } catch {
+    return null;
+  }
+}
+
 function validateSpec(spec) {
   const specPath = path.join(rootDir, '.ralph', 'specs', `${spec}.md`);
   return fs.existsSync(specPath);
@@ -99,7 +110,7 @@ function checkDockerImage(targetImageName = imageName) {
     });
     if (!images.split('\n').includes(targetImageName)) {
       console.log(`Building ${targetImageName} image...`);
-      execSync(`docker build -t ${targetImageName} -f .ralph/Dockerfile .`, {
+      execSync(`docker build -t ${targetImageName} -f .ralph/docker/Dockerfile .`, {
         stdio: 'inherit',
         cwd: rootDir,
       });
@@ -145,6 +156,127 @@ function getGitBranch() {
   } catch {
     return 'main';
   }
+}
+
+async function specGatherWizard(specName) {
+  const seedPath = path.join(rootDir, '.ralph', 'spec_seed.md');
+  const specPath = path.join(rootDir, '.ralph', 'specs', `${specName}.md`);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
+
+  // Helper: read multiline input (empty line to finish)
+  const readMultiline = async (prompt) => {
+    console.log(`  ${prompt}`);
+    console.log('\x1b[2m  (Enter each item on its own line. Empty line to finish.)\x1b[0m');
+    const lines = [];
+    while (true) {
+      const line = await question('  > ');
+      if (line.trim() === '') break;
+      lines.push(line.trim());
+    }
+    return lines;
+  };
+
+  console.log('\n\x1b[35m📋 Spec Gather Wizard\x1b[0m');
+  console.log('\x1b[2m─────────────────────────────────\x1b[0m\n');
+
+  // Check for existing spec_seed.md — offer to reuse
+  if (fs.existsSync(seedPath)) {
+    console.log('\x1b[33mFound existing spec_seed.md\x1b[0m');
+    const reuse = await question('Skip wizard and continue refinement? [Y/n]: ');
+    if (reuse.trim().toLowerCase() !== 'n' && reuse.trim().toLowerCase() !== 'no') {
+      console.log('\x1b[32m✓ Reusing existing spec_seed.md\x1b[0m\n');
+      rl.close();
+      return;
+    }
+    console.log('');
+  }
+
+  // Check for existing spec file — warn if overwriting
+  if (fs.existsSync(specPath)) {
+    console.log(`\x1b[33m⚠️  Warning: specs/${specName}.md already exists.\x1b[0m`);
+    console.log('\x1b[33m   It will be overwritten during the draft phase.\x1b[0m\n');
+  }
+
+  // Step 1: Executive summary
+  console.log('\x1b[36m[1/5] Executive Summary\x1b[0m');
+  console.log('\x1b[2m  What is this feature? Describe it in 1-3 sentences.\x1b[0m');
+  const summaryLines = [];
+  while (true) {
+    const line = await question('  > ');
+    if (line.trim() === '') {
+      if (summaryLines.length > 0) break;
+      console.log('  \x1b[31mPlease enter at least one line.\x1b[0m');
+      continue;
+    }
+    summaryLines.push(line.trim());
+  }
+  const summary = summaryLines.join('\n');
+  console.log('');
+
+  // Step 2: Key requirements
+  console.log('\x1b[36m[2/5] Key Requirements\x1b[0m');
+  const requirements = await readMultiline('What are the key requirements?');
+  console.log('');
+
+  // Step 3: Preferences
+  console.log('\x1b[36m[3/5] Developer Preferences\x1b[0m');
+  console.log('\x1b[2m  Any patterns, libraries, or approaches you want to follow? (optional)\x1b[0m');
+  const preferences = await readMultiline('Preferences:');
+  console.log('');
+
+  // Step 4: Constraints
+  console.log('\x1b[36m[4/5] Known Constraints\x1b[0m');
+  console.log('\x1b[2m  Any limitations, deadlines, or technical constraints? (optional)\x1b[0m');
+  const constraints = await readMultiline('Constraints:');
+  console.log('');
+
+  // Step 5: Reference URLs
+  console.log('\x1b[36m[5/5] Reference URLs\x1b[0m');
+  console.log('\x1b[2m  Any reference links (docs, designs, APIs)? (optional)\x1b[0m');
+  const urls = await readMultiline('URLs:');
+
+  rl.close();
+
+  // Build spec_seed.md content
+  let seed = `# Spec Seed: ${specName}\n\n`;
+  seed += `## Feature Name\n${specName}\n\n`;
+  seed += `## Summary\n${summary}\n\n`;
+
+  seed += `## Requirements\n`;
+  if (requirements.length > 0) {
+    requirements.forEach(r => { seed += `- ${r}\n`; });
+  } else {
+    seed += `(No specific requirements provided — AI will infer from summary)\n`;
+  }
+  seed += '\n';
+
+  if (preferences.length > 0) {
+    seed += `## Preferences\n`;
+    preferences.forEach(p => { seed += `- ${p}\n`; });
+    seed += '\n';
+  }
+
+  if (constraints.length > 0) {
+    seed += `## Constraints\n`;
+    constraints.forEach(c => { seed += `- ${c}\n`; });
+    seed += '\n';
+  }
+
+  if (urls.length > 0) {
+    seed += `## References\n`;
+    urls.forEach(u => { seed += `- ${u}\n`; });
+    seed += '\n';
+  }
+
+  // Write spec_seed.md
+  fs.writeFileSync(seedPath, seed);
+  console.log(`\n\x1b[32m✓ Created .ralph/spec_seed.md\x1b[0m\n`);
 }
 
 function runRalphBackground(spec, mode, iterations, verbose) {
@@ -227,7 +359,7 @@ function runRalphBackground(spec, mode, iterations, verbose) {
     '-e', `RALPH_BRANCH=${targetBranch}`,
     '-e', `RALPH_BASE_BRANCH=${baseBranch}`,
     backgroundImageName,
-    'bash', './.ralph/loop.sh',
+    'bash', './.ralph/scripts/loop.sh',
     spec,
     mode,
     String(iterations),
@@ -321,7 +453,7 @@ function runRalph(spec, mode, iterations, verbose) {
     '-w',
     '/workspace',
     imageName,
-    'bash', './.ralph/loop.sh',
+    'bash', './.ralph/scripts/loop.sh',
     spec,
     mode,
     String(iterations),
@@ -367,13 +499,36 @@ async function interactivePrompt(preselectedMode = null) {
 
   let spec = '';
 
-  // Auto-select if only one spec available
-  if (availableSpecs.length === 1) {
+  // Spec mode: always prompt for a name (can be new or existing)
+  if (preselectedMode === 'spec') {
+    if (availableSpecs.length > 0) {
+      console.log('Existing specs:');
+      availableSpecs.forEach((s, i) => {
+        console.log(`  ${i + 1}. ${s}`);
+      });
+      console.log('');
+    }
+    while (!spec) {
+      const input = await question('Enter spec name (new or existing): ');
+      const trimmed = input.trim();
+      const num = parseInt(trimmed);
+      if (!isNaN(num) && num >= 1 && num <= availableSpecs.length) {
+        spec = availableSpecs[num - 1];
+      } else if (trimmed) {
+        spec = trimmed.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      }
+    }
+  } else if (availableSpecs.length === 1) {
+    // Auto-select if only one spec available
     spec = availableSpecs[0];
     console.log(`\x1b[32mAuto-selected spec: ${spec}\x1b[0m\n`);
   } else if (availableSpecs.length > 1) {
     console.log('Available specs:');
-    availableSpecs.forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
+    availableSpecs.forEach((s, i) => {
+      const details = getSpecDetails(s);
+      const suffix = details ? ` \x1b[36m[${details.complete}/${details.total} sub-specs]\x1b[0m` : '';
+      console.log(`  ${i + 1}. ${s}${suffix}`);
+    });
     console.log('');
 
     while (!spec) {
@@ -393,7 +548,7 @@ async function interactivePrompt(preselectedMode = null) {
       }
     }
   } else {
-    console.log('\x1b[33mNo specs found. Create one at .ralph/specs/<name>.md\x1b[0m\n');
+    console.log('\x1b[33mNo specs found. Create one at .ralph/specs/<name>.md or use spec mode.\x1b[0m\n');
     rl.close();
     process.exit(1);
   }
@@ -404,14 +559,18 @@ async function interactivePrompt(preselectedMode = null) {
     console.log(`\x1b[32mMode: ${preselectedMode}\x1b[0m\n`);
   } else {
     console.log('Modes:');
-    console.log('  1. plan   - Analyze codebase and create implementation plan');
-    console.log('  2. build  - Implement tasks from the plan');
-    console.log('  3. review - Review implementation for bugs and issues');
-    console.log('  4. full   - Full cycle: plan → build → review → check (repeats until complete)');
+    console.log('  1. plan       - Analyze codebase and create implementation plan');
+    console.log('  2. build      - Implement tasks from the plan');
+    console.log('  3. review     - Review implementation for bugs and issues');
+    console.log('  4. review-fix - Fix issues identified during review');
+    console.log('  5. debug      - Single iteration, verbose, no commits');
+    console.log('  6. full       - Full cycle: plan → build → review → check (repeats until complete)');
+    console.log('  7. decompose  - Break large spec into ordered sub-specs for full mode');
+    console.log('  8. spec       - Create spec interactively: gather → research → draft → review');
     console.log('');
 
     while (!mode) {
-      const input = await question('Select mode [1/2/3/4 or plan/build/review/full] (default: build): ');
+      const input = await question('Select mode [1-8 or name] (default: build): ');
       const trimmed = input.trim().toLowerCase();
 
       if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
@@ -420,40 +579,74 @@ async function interactivePrompt(preselectedMode = null) {
         mode = 'plan';
       } else if (trimmed === '3' || trimmed === 'review') {
         mode = 'review';
-      } else if (trimmed === '4' || trimmed === 'full' || trimmed === 'yolo') {
+      } else if (trimmed === '4' || trimmed === 'review-fix') {
+        mode = 'review-fix';
+      } else if (trimmed === '5' || trimmed === 'debug') {
+        mode = 'debug';
+      } else if (trimmed === '6' || trimmed === 'full' || trimmed === 'yolo') {
         mode = 'full';
+      } else if (trimmed === '7' || trimmed === 'decompose') {
+        mode = 'decompose';
+      } else if (trimmed === '8' || trimmed === 'spec') {
+        mode = 'spec';
       } else {
-        console.log('\x1b[31mInvalid selection. Enter 1, 2, 3, 4, plan, build, review, or full.\x1b[0m');
+        console.log('\x1b[31mInvalid selection. Enter 1-8 or mode name.\x1b[0m');
       }
     }
   }
 
-  const defaultIterations = mode === 'plan' ? 5 : (mode === 'full' ? 10 : 10);
+  // If spec mode was selected from the menu (not preselected), the spec name might not exist yet
+  // In that case, the spec name was auto-selected or selected from the list — it's fine to use it
+  // as the feature name for the new spec
+
+  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'decompose' ? 1 : (mode === 'spec' ? 8 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10)))));
   const iterLabel = mode === 'full' ? 'max cycles' : 'iterations';
+
+  // Debug mode doesn't need iteration prompt
+  if (mode === 'debug') {
+    console.log('\x1b[33m⚠️  Debug mode: 1 iteration, verbose, no commits\x1b[0m\n');
+  }
+
+  // Decompose mode runs once
+  if (mode === 'decompose') {
+    console.log('\x1b[35mDecompose mode: breaking spec into sub-specs\x1b[0m\n');
+  }
   const iterInput = await question(`Number of ${iterLabel} (default: ${defaultIterations}): `);
   const iterations = parseInt(iterInput.trim()) || defaultIterations;
 
   const verboseInput = await question('Verbose output? (default: No) [y/N]: ');
   const verbose = verboseInput.trim().toLowerCase() === 'y' || verboseInput.trim().toLowerCase() === 'yes';
 
+  // Debug and decompose modes never run in background
   // Full mode defaults to background since it can run for hours
-  const backgroundDefault = mode === 'full';
-  const backgroundPrompt = backgroundDefault
-    ? 'Run in background? (Ralph clones repo, you keep working) (default: Yes) [Y/n]: '
-    : 'Run in background? (Ralph clones repo, you keep working) (default: No) [y/N]: ';
-  const backgroundInput = await question(backgroundPrompt);
-  const backgroundTrimmed = backgroundInput.trim().toLowerCase();
+  let background = false;
 
-  let background;
-  if (backgroundDefault) {
-    // For full mode, default is yes - only 'n' or 'no' turns it off
-    background = backgroundTrimmed !== 'n' && backgroundTrimmed !== 'no';
+  if (mode === 'debug' || mode === 'decompose' || mode === 'spec') {
+    console.log(`\x1b[33m${mode.charAt(0).toUpperCase() + mode.slice(1)} mode always runs in foreground.\x1b[0m\n`);
+    background = false;
   } else {
-    // For other modes, default is no - only 'y' or 'yes' turns it on
-    background = backgroundTrimmed === 'y' || backgroundTrimmed === 'yes';
+    const backgroundDefault = mode === 'full';
+    const backgroundPrompt = backgroundDefault
+      ? 'Run in background? (Ralph clones repo, you keep working) (default: Yes) [Y/n]: '
+      : 'Run in background? (Ralph clones repo, you keep working) (default: No) [y/N]: ';
+    const backgroundInput = await question(backgroundPrompt);
+    const backgroundTrimmed = backgroundInput.trim().toLowerCase();
+
+    if (backgroundDefault) {
+      // For full mode, default is yes - only 'n' or 'no' turns it off
+      background = backgroundTrimmed !== 'n' && backgroundTrimmed !== 'no';
+    } else {
+      // For other modes, default is no - only 'y' or 'yes' turns it on
+      background = backgroundTrimmed === 'y' || backgroundTrimmed === 'yes';
+    }
   }
 
   rl.close();
+
+  // Spec mode: run gather wizard before launching Docker
+  if (mode === 'spec') {
+    await specGatherWizard(spec);
+  }
 
   if (background) {
     runRalphBackground(spec, mode, iterations, verbose);
@@ -475,16 +668,20 @@ const background = args.includes('--background') || args.includes('-b');
 const planFlag = args.includes('--plan');
 const buildFlag = args.includes('--build');
 const reviewFlag = args.includes('--review');
+const reviewFixFlag = args.includes('--review-fix');
+const debugFlag = args.includes('--debug');
 const fullFlag = args.includes('--full') || args.includes('--yolo');
+const decomposeFlag = args.includes('--decompose');
+const specFlag = args.includes('--spec');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
   a !== '--background' && a !== '-b' &&
   a !== '--no-background' && a !== '--foreground' && a !== '-f' &&
-  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--full' && a !== '--yolo'
+  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo' && a !== '--decompose' && a !== '--spec'
 );
 
 // Determine preselected mode from flags
-const preselectedMode = fullFlag ? 'full' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)));
+const preselectedMode = specFlag ? 'spec' : (decomposeFlag ? 'decompose' : (fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)))))));
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -494,10 +691,19 @@ if (filteredArgs.length === 0) {
   });
 } else {
   // Parse arguments
-  // Usage: run.js <spec-name> [plan|build] [iterations] [--verbose] [--background]
+  // Usage: run.js <spec-name> [plan|build|spec|...] [iterations] [--verbose] [--background]
   const spec = filteredArgs[0];
 
-  if (!validateSpec(spec)) {
+  // Determine mode first (needed for validation skip)
+  let mode = preselectedMode || 'build';
+
+  // Quick check: if positional arg is 'spec', set mode before validation
+  if (filteredArgs[1] === 'spec') {
+    mode = 'spec';
+  }
+
+  // Validate spec file exists (skip for spec mode — spec doesn't exist yet)
+  if (mode !== 'spec' && !validateSpec(spec)) {
     console.error(`\x1b[31mError: Spec file not found: .ralph/specs/${spec}.md\x1b[0m`);
     const availableSpecs = getAvailableSpecs();
     if (availableSpecs.length > 0) {
@@ -508,11 +714,16 @@ if (filteredArgs.length === 0) {
   }
 
   // Parse mode and iterations (for full mode, iterations = cycles)
-  // Priority: positional arg > --plan/--build/--review/--full flag > default (build)
-  let mode = preselectedMode || 'build';
-  let iterations = mode === 'plan' ? 5 : (mode === 'full' ? 10 : 10);
+  // Priority: positional arg > --plan/--build/--review/--full/--spec flag > default (build)
+  let iterations = mode === 'plan' ? 5 : (mode === 'full' ? 10 : (mode === 'spec' ? 8 : 10));
 
-  if (filteredArgs[1] === 'plan') {
+  if (filteredArgs[1] === 'spec') {
+    mode = 'spec';
+    iterations = 8;
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
+    }
+  } else if (filteredArgs[1] === 'plan') {
     mode = 'plan';
     iterations = 5;
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
@@ -530,22 +741,44 @@ if (filteredArgs.length === 0) {
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);
     }
+  } else if (filteredArgs[1] === 'review-fix') {
+    mode = 'review-fix';
+    iterations = 5;
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
+    }
+  } else if (filteredArgs[1] === 'debug') {
+    mode = 'debug';
+    iterations = 1;  // Debug mode: single iteration, verbose, no commit
   } else if (filteredArgs[1] === 'full' || filteredArgs[1] === 'yolo') {
     mode = 'full';
     iterations = 10;  // 10 cycles by default (each cycle = plan + build + review + check)
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);
     }
+  } else if (filteredArgs[1] === 'decompose') {
+    mode = 'decompose';
+    iterations = 1;  // Decompose mode: single iteration
   } else if (filteredArgs[1] && isNumeric(filteredArgs[1])) {
     iterations = parseInt(filteredArgs[1]);
   }
 
   // Full mode defaults to background since it can run for hours
+  // Debug mode never runs in background
   // Use --no-background or --foreground to override
   const noBackground = args.includes('--no-background') || args.includes('--foreground') || args.includes('-f');
-  const useBackground = noBackground ? false : (background || mode === 'full');
+  const useBackground = (mode === 'debug' || mode === 'decompose' || mode === 'spec') ? false : (noBackground ? false : (background || mode === 'full'));
 
-  if (useBackground) {
+  // Spec mode: run gather wizard before launching Docker (async wrapper)
+  if (mode === 'spec') {
+    specGatherWizard(spec).then(() => {
+      setupWindowsSignalHandler();
+      runRalph(spec, mode, iterations, verbose);
+    }).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else if (useBackground) {
     // Background mode - Ralph clones and works on his own copy
     runRalphBackground(spec, mode, iterations, verbose);
   } else {
