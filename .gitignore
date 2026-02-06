@@ -1,0 +1,46 @@
+# Environment and secrets
+.ralph/.env
+.ralph/.env.*
+!.ralph/.env.example
+
+# Runtime state files (auto-managed by Ralph)
+.ralph/state.json
+.ralph/paused.md
+
+# Spec mode working files
+.ralph/spec_seed.md
+.ralph/spec_research.md
+.ralph/spec_questions.md
+.ralph/spec_review.md
+.ralph/spec_approved.md
+
+# Active spec (auto-copied at runtime)
+.ralph/specs/active.md
+
+# Review output files
+.ralph/review.md
+.ralph/review_checklist.md
+
+# IDE and editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
