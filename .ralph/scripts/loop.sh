@@ -238,10 +238,11 @@ if ! claude -p --output-format json <<< "Reply with only the word 'ok'" > /dev/n
     echo -e "\033[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo ""
     echo "  Possible causes:"
-    echo "    • AWS_BEARER_TOKEN_BEDROCK is missing or expired"
+    echo "    • API credentials are missing, invalid, or expired"
     echo "    • Network connectivity issues"
     echo ""
-    echo "  Check your .ralph/.env file and try again."
+    echo "  Check your .ralph/.env file and ensure your API provider is configured."
+    echo "  See .ralph/.env.example for supported providers (Anthropic API, AWS Bedrock, Google Vertex)."
     echo ""
     exit 1
 fi
