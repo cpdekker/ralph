@@ -12,7 +12,9 @@ Another turn will be started automatically to continue refining the plan.
 3. Read `.ralph/implementation_plan.md` (if present) to see current plan state
 4. Read `.ralph/review.md` (if present) to see findings from code review
 5. Read `.ralph/AGENTS.md` for project conventions
-6. **Sub-Spec Context**: If `active.md` references a master spec (look for "Master Spec:" header), also read the master spec file for broader context. This helps you understand how this sub-spec fits into the larger feature.
+6. Read `.ralph/progress.txt` (if present) — cross-iteration memory with prior decisions, blockers, and learnings
+7. Read `.ralph/guardrails.md` (if present) — accumulated anti-patterns and constraints. **Respect these before making decisions.**
+8. **Sub-Spec Context**: If `active.md` references a master spec (look for "Master Spec:" header), also read the master spec file for broader context. This helps you understand how this sub-spec fits into the larger feature.
 
 ---
 
@@ -38,6 +40,7 @@ Use subagents to analyze the codebase and create/update `.ralph/implementation_p
 - **If `.ralph/user-review.md` exists**: Research and formalize ALL user notes into actionable plan items
 
 ### Planning Phase
+- **Check guardrails**: Before finalizing the plan, verify no items conflict with known anti-patterns in `.ralph/guardrails.md`
 - Use an Opus subagent to analyze findings and prioritize tasks
 - Create/update `.ralph/implementation_plan.md` with actionable items
 - **Prioritize user notes first**: If user-review.md has content, address those items FIRST
@@ -193,11 +196,17 @@ For complex features, track dependencies between items:
 - **NEVER modify `.ralph/specs/active.md`** — The spec is the source of truth and must remain unchanged across all iterations
 - **NEVER modify `.ralph/specs/*.md`** — All spec files are read-only during planning
 
+## Update Cross-Iteration Memory
+
+Before committing:
+1. **Append to `.ralph/progress.txt`** — Log what you analyzed, key decisions made, and any blockers found. Keep entries concise (1-3 lines).
+2. **Update `.ralph/guardrails.md`** — If you discovered anti-patterns or architectural constraints during analysis, add them to the appropriate section.
+
 ## Commit and Push
 
 After updating the plan:
 ```bash
-git add .ralph/implementation_plan.md
+git add .ralph/implementation_plan.md .ralph/progress.txt .ralph/guardrails.md
 git commit -m "Update implementation plan"
 git push
 ```

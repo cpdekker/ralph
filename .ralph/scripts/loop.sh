@@ -340,10 +340,77 @@ EOF
     git push origin "$CURRENT_BRANCH" 2>/dev/null || true
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# CROSS-ITERATION MEMORY FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# append_progress() — Appends a timestamped entry to progress.txt
+append_progress() {
+    local event_type=$1  # e.g., session_start, iteration_success, phase_start, error, circuit_breaker
+    local message=$2
+    local progress_file="./.ralph/progress.txt"
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Create with header if missing
+    if [ ! -f "$progress_file" ]; then
+        cat > "$progress_file" << 'HEADER'
+# Ralph Progress Log
+<!-- This file is append-only cross-iteration memory. Claude reads this at the start of each iteration to understand prior context. -->
+HEADER
+    fi
+
+    echo "[$now] [$event_type] $message" >> "$progress_file"
+}
+
+# init_guardrails() — Creates guardrails.md template if missing
+init_guardrails() {
+    local guardrails_file="./.ralph/guardrails.md"
+    if [ ! -f "$guardrails_file" ]; then
+        cat > "$guardrails_file" << 'EOF'
+# Ralph Guardrails
+<!-- Accumulated lessons learned across iterations. Claude reads this before making decisions. Add new guardrails when you discover patterns that future iterations should know about. -->
+
+## Anti-Patterns
+<!-- Things that have been tried and failed. Don't repeat these. -->
+
+## Environment Quirks
+<!-- Project-specific gotchas discovered during implementation. -->
+
+## Architectural Constraints
+<!-- Decisions that were made and should not be revisited. -->
+
+## Known Issues
+<!-- Problems discovered but not yet resolved. Include context for future iterations. -->
+EOF
+    fi
+}
+
+# append_guardrail() — Adds a new entry to a guardrails section
+append_guardrail() {
+    local section=$1  # e.g., "Anti-Patterns", "Known Issues"
+    local entry=$2
+    local guardrails_file="./.ralph/guardrails.md"
+    local now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    init_guardrails
+
+    # Append under the matching section header using sed
+    sed -i "/^## $section$/a\\- [$now] $entry" "$guardrails_file"
+}
+
+# stage_ralph_memory() — Stages progress.txt and guardrails.md for git
+stage_ralph_memory() {
+    git add .ralph/progress.txt .ralph/guardrails.md 2>/dev/null || true
+}
+
 # Initialize session
 SESSION_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TOTAL_ITERATIONS=0
 ERROR_COUNT=0
+
+# Initialize cross-iteration memory
+append_progress "session_start" "spec=$SPEC_NAME mode=$MODE max_iters=$MAX_ITERATIONS"
+init_guardrails
 
 # Check for existing checkpoint
 if load_state; then
@@ -389,12 +456,13 @@ if [ -n "$SETUP_PROMPT_FILE" ]; then
         fi
     fi
     
-    # Push setup changes
+    # Stage cross-iteration memory files and push setup changes
+    stage_ralph_memory
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-    
+
     echo ""
     echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo -e "\033[1;35m  SETUP COMPLETE - Starting review loop\033[0m"
@@ -699,31 +767,37 @@ run_single_iteration() {
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
+            append_progress "iteration_failure" "phase=$phase_name iter=$iteration_num exit_code=$CLAUDE_EXIT"
             return 1
+        else
+            CONSECUTIVE_FAILURES=0  # Reset on success
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
     else
         echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $iteration_num..."
         echo ""
-        
+
         cat "$prompt_file" | claude -p \
             --dangerously-skip-permissions \
             --output-format=stream-json \
             --verbose > "$LOG_FILE" 2>&1 &
-        
+
         CLAUDE_PID=$!
         spin $CLAUDE_PID
         wait $CLAUDE_PID
         CLAUDE_EXIT=$?
-        
+
         if [ $CLAUDE_EXIT -ne 0 ]; then
             echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
+            append_progress "iteration_failure" "phase=$phase_name iter=$iteration_num exit_code=$CLAUDE_EXIT"
             return 1
         else
             echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
             CONSECUTIVE_FAILURES=0  # Reset on success
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
     fi
     
@@ -736,15 +810,18 @@ run_single_iteration() {
         return 0
     fi
     
+    # Stage cross-iteration memory files
+    stage_ralph_memory
+
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-    
+
     # Update checkpoint after successful iteration
     save_state "$phase_name" "$iteration_num" "Completed successfully"
-    
+
     return 0
 }
 
@@ -847,8 +924,12 @@ check_circuit_breaker() {
         echo -e "  \033[1;33mHuman intervention required.\033[0m"
         echo ""
         
+        append_progress "circuit_breaker" "$CONSECUTIVE_FAILURES consecutive failures"
+        append_guardrail "Known Issues" "Circuit breaker tripped in $MODE phase after $CONSECUTIVE_FAILURES failures"
+        stage_ralph_memory
+
         create_paused_state "Circuit breaker tripped after $CONSECUTIVE_FAILURES consecutive failures"
-        
+
         return 0  # Circuit breaker tripped
     fi
     return 1  # Circuit breaker not tripped
@@ -1402,8 +1483,10 @@ if [ "$MODE" = "full" ]; then
             # SPEC_SELECT_RESULT=0 means we selected a sub-spec, continue to plan phase
         fi
 
+        append_progress "cycle_start" "cycle=$CYCLE"
+
         print_cycle_banner $CYCLE
-        
+
         # ─────────────────────────────────────────────────────────────────────
         # PLAN PHASE
         # ─────────────────────────────────────────────────────────────────────
@@ -1440,7 +1523,8 @@ if [ "$MODE" = "full" ]; then
         fi
         
         echo -e "  \033[1;32m✓\033[0m Plan phase complete ($PLAN_ITERATION iterations)"
-        
+        append_progress "phase_complete" "PLAN cycle=$CYCLE iters=$PLAN_ITERATION"
+
         # ─────────────────────────────────────────────────────────────────────
         # BUILD PHASE
         # ─────────────────────────────────────────────────────────────────────
@@ -1481,7 +1565,8 @@ if [ "$MODE" = "full" ]; then
         fi
         
         echo -e "  \033[1;32m✓\033[0m Build phase complete"
-        
+        append_progress "phase_complete" "BUILD cycle=$CYCLE iters=$BUILD_ITERATION"
+
         # ─────────────────────────────────────────────────────────────────────
         # REVIEW PHASE (with setup on first iteration of each cycle)
         # ─────────────────────────────────────────────────────────────────────
@@ -1507,6 +1592,7 @@ if [ "$MODE" = "full" ]; then
             wait $SETUP_PID
         fi
         
+        stage_ralph_memory
         git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
         echo -e "  \033[1;32m✓\033[0m Review setup complete"
         echo ""
@@ -1598,6 +1684,7 @@ if [ "$MODE" = "full" ]; then
         fi
         
         echo -e "  \033[1;32m✓\033[0m Review phase complete"
+        append_progress "phase_complete" "REVIEW cycle=$CYCLE iters=$REVIEW_ITERATION"
 
         # ─────────────────────────────────────────────────────────────────────
         # REVIEW-FIX PHASE
@@ -1653,6 +1740,7 @@ if [ "$MODE" = "full" ]; then
             fi
 
             echo -e "  \033[1;32m✓\033[0m Review-fix phase complete"
+            append_progress "phase_complete" "REVIEW-FIX cycle=$CYCLE iters=$REVIEWFIX_ITERATION"
         else
             echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
         fi
@@ -1683,6 +1771,13 @@ if [ "$MODE" = "full" ]; then
         rm -f "$STATE_FILE"
     fi
     
+    if [ "$IMPLEMENTATION_COMPLETE" = true ]; then
+        append_progress "session_end" "result=complete cycles=$CYCLE iters=$TOTAL_ITERATIONS errors=$ERROR_COUNT"
+    else
+        append_progress "session_end" "result=incomplete cycles=$CYCLE iters=$TOTAL_ITERATIONS errors=$ERROR_COUNT"
+    fi
+    stage_ralph_memory
+
     echo ""
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     if [ "$IMPLEMENTATION_COMPLETE" = true ]; then
@@ -1694,7 +1789,7 @@ if [ "$MODE" = "full" ]; then
     echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     echo ""
-    
+
     exit 0
 fi
 
@@ -1855,9 +1950,11 @@ while true; do
         echo "  Check log: $LOG_FILE"
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         ERROR_COUNT=$((ERROR_COUNT + 1))
+        append_progress "iteration_failure" "phase=$MODE iter=$ITERATION exit_code=$CLAUDE_EXIT"
     else
         echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
         CONSECUTIVE_FAILURES=0  # Reset on success
+        append_progress "iteration_success" "phase=$MODE iter=$ITERATION"
     fi
 
     # Generate and display summary
@@ -1869,12 +1966,15 @@ while true; do
         break  # Debug mode only runs once
     fi
 
+    # Stage cross-iteration memory files
+    stage_ralph_memory
+
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-    
+
     # Update checkpoint
     save_state "$MODE" "$ITERATION" "Completed"
 done
@@ -1886,6 +1986,9 @@ COMPLETED_ITERATIONS=$((ITERATION - 1))
 
 # Clean up state file on normal completion
 rm -f "$STATE_FILE"
+
+append_progress "session_end" "result=complete iters=$COMPLETED_ITERATIONS errors=$ERROR_COUNT"
+stage_ralph_memory
 
 echo ""
 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"

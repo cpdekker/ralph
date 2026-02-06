@@ -20,6 +20,7 @@ Look for items tagged with `[UX]` in `.ralph/review_checklist.md`.
 2. Read `.ralph/implementation_plan.md` to see what was planned
 3. Read `.ralph/review_checklist.md` to see the review progress
 4. Read `.ralph/AGENTS.md` for project conventions and patterns
+5. Read `.ralph/guardrails.md` (if present) — known issues and constraints that may affect review
 
 ---
 
@@ -38,7 +39,7 @@ Look for items tagged with `[UX]` in `.ralph/review_checklist.md`.
 5. **Update `.ralph/review.md`** — append findings under "UX Review" section
 6. **Commit and push**:
    ```bash
-   git add .ralph/review_checklist.md .ralph/review.md
+   git add .ralph/review_checklist.md .ralph/review.md .ralph/guardrails.md
    git commit -m "UX Review: [X items reviewed]"
    git push
    ```
