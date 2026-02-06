@@ -32,9 +32,12 @@ An AI agent framework that uses Claude Code to iteratively implement features fr
 - [Active Spec Pattern](#active-spec-pattern)
 - [Customization](#customization)
 - [Requirements](#requirements)
+- [API Providers](#api-providers)
 - [Tips](#tips)
 - [Docker Image Updates](#docker-image-updates)
 - [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [Security](#security)
 - [References](#references)
 
 ---
@@ -93,30 +96,33 @@ The interactive setup wizard will guide you through:
 <details>
 <summary>Click to expand manual setup instructions</summary>
 
-Add to .gitignore:
-
-```.gitignore
-# Ralph
-.ralph/.env
-```
-
 ```bash
 cp .ralph/.env.example .ralph/.env
 ```
 
-Edit `.ralph/.env` and add:
+Edit `.ralph/.env` and configure your API provider (see [API Providers](#api-providers) for all options):
 
 ```env
-AWS_BEARER_TOKEN_BEDROCK=...
+# Option 1: Anthropic API (simplest)
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 
+# Option 2: AWS Bedrock
+# CLAUDE_CODE_USE_BEDROCK=1
+# AWS_ACCESS_KEY_ID=...
+# AWS_SECRET_ACCESS_KEY=...
+# AWS_REGION=us-west-2
+
+# Option 3: Google Vertex AI
+# CLAUDE_CODE_USE_VERTEX=1
+# ANTHROPIC_VERTEX_PROJECT_ID=your-project-id
+# CLOUD_ML_REGION=us-east5
+
+# Git credentials (required)
 GIT_USER=your-github-username
 GIT_TOKEN=ghp_your_personal_access_token
 ```
 
-| Variable | Where to get it |
-|----------|-----------------|
-| `AWS_BEARER_TOKEN_BEDROCK` | [AWS Bedrock Console](https://us-west-2.console.aws.amazon.com/bedrock/home?region=us-west-2#/api-keys?tab=short-term) |
-| `GIT_TOKEN` | [GitHub Personal Access Tokens](https://github.com/settings/tokens) — use minimal permissions, repo-scoped |
+Ensure `.ralph/.env` is in your `.gitignore` (it should be by default — **never commit credentials**).
 
 Update `.ralph/AGENTS.md` with your project's build commands, test commands, and critical patterns.
 
@@ -735,7 +741,52 @@ A living checklist that Ralph updates:
 | Docker | Latest | Docker Desktop on Windows/Mac |
 | Node.js | 18+ | For run scripts |
 | Git | 2.x+ | Branch management |
-| API Key | — | AWS Bedrock or Anthropic |
+| API Key | — | Any supported Claude API provider (see below) |
+
+---
+
+## API Providers
+
+Ralph uses [Claude Code](https://docs.anthropic.com/en/docs/claude-code) under the hood. You can use any provider that Claude Code supports. Configure **one** of the following in `.ralph/.env`:
+
+### Anthropic API (recommended for getting started)
+
+The simplest option. Get an API key from the [Anthropic Console](https://console.anthropic.com/settings/keys).
+
+```env
+ANTHROPIC_API_KEY=sk-ant-your-api-key-here
+```
+
+### AWS Bedrock
+
+Use Claude through your AWS account. See the [Bedrock documentation](https://docs.anthropic.com/en/docs/claude-code/bedrock-vertex) for details.
+
+```env
+CLAUDE_CODE_USE_BEDROCK=1
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-west-2
+```
+
+Or with short-term bearer token credentials:
+
+```env
+CLAUDE_CODE_USE_BEDROCK=1
+AWS_BEARER_TOKEN_BEDROCK=your-bearer-token
+AWS_REGION=us-west-2
+```
+
+### Google Cloud Vertex AI
+
+Use Claude through Google Cloud. See the [Vertex AI documentation](https://docs.anthropic.com/en/docs/claude-code/bedrock-vertex) for details.
+
+```env
+CLAUDE_CODE_USE_VERTEX=1
+ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project-id
+CLOUD_ML_REGION=us-east5
+```
+
+Ensure you have authenticated via `gcloud auth application-default login` before running Ralph.
 
 ---
 
@@ -820,6 +871,18 @@ Check `.ralph/paused.md` for context. Common causes:
 
 ---
 
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+
+---
+
+## Security
+
+If you discover a security vulnerability, please see [SECURITY.md](SECURITY.md) for responsible disclosure instructions. **Do not open a public issue for security vulnerabilities.**
+
+---
+
 ## References
 
 Based on the [Ralph Wiggum loop pattern](https://github.com/ghuntley/how-to-ralph-wiggum) by Geoffrey Huntley.
@@ -831,3 +894,9 @@ Based on the [Ralph Wiggum loop pattern](https://github.com/ghuntley/how-to-ralp
 | [How to Ralph](https://github.com/ghuntley/how-to-ralph-wiggum) | Original concept and prompts |
 | [Ralph Wiggum Playbook](https://paddo.dev/blog/ralph-wiggum-playbook/) | Practical tips and workflows |
 | [You're using Ralph wrong](https://www.youtube.com/watch?v=I7azCAgoUHc) | Common mistakes to avoid |
+
+---
+
+## License
+
+[MIT](LICENSE) - Copyright 2026 Chris Dekker
