@@ -94,7 +94,7 @@ mkdir -p .ralph/prompts
 
 # Copy the built-in prompt as a starting point
 # (find it in the ralph package: lib/prompts/build.md)
-cp $(npm root -g)/ralph-cli/lib/prompts/build.md .ralph/prompts/build.md
+cp $(npm root -g)/ralphai/lib/prompts/build.md .ralph/prompts/build.md
 
 # Edit to your needs
 $EDITOR .ralph/prompts/build.md
@@ -163,7 +163,7 @@ ralph update
 
 Or manually:
 ```bash
-npm update -g ralph-cli
+npm update -g ralphai
 ```
 
 Your `.ralph/` directory won't be affected by updates. Only the CLI tool and its built-in prompts change. Any local prompt overrides you've created continue to take precedence.

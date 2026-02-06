@@ -73,7 +73,7 @@ Ralph uses the "Ralph Wiggum Loop" pattern — each iteration spawns a fresh Cla
 ### From npm
 
 ```bash
-npm install -g ralph-cli
+npm install -g ralphai
 ```
 
 ### From source
@@ -457,7 +457,7 @@ The local file wins if it exists.
 mkdir -p .ralph/prompts
 
 # Copy the built-in prompt as a starting point
-cp $(npm root -g)/ralph-cli/lib/prompts/build.md .ralph/prompts/build.md
+cp $(npm root -g)/ralphai/lib/prompts/build.md .ralph/prompts/build.md
 
 # Edit to your needs
 $EDITOR .ralph/prompts/build.md
@@ -590,7 +590,7 @@ ralph update
 
 Or manually:
 ```bash
-npm install -g ralph-cli@latest
+npm install -g ralphai@latest
 ```
 
 ### If installed from source
