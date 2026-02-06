@@ -1,0 +1,52 @@
+name: Release & Publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    # Only allow the repo owner to publish
+    if: github.actor == 'cpdekker'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Sync version from release tag
+        run: |
+          # Strip 'v' prefix from tag (v0.1.0 -> 0.1.0)
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Setting version to $VERSION"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Update package.json version in repo
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          git add package.json package-lock.json
+          git diff --cached --quiet || git commit -m "chore: bump version to $VERSION"
+          git push origin main
