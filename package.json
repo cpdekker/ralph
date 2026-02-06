@@ -1,0 +1,26 @@
+{
+  "name": "ralph-cli",
+  "version": "0.1.0",
+  "description": "Ralph Wiggum - AI agent that autonomously implements features using Claude Code",
+  "bin": {
+    "ralph": "./bin/ralph.js"
+  },
+  "files": [
+    "bin/",
+    "lib/"
+  ],
+  "keywords": [
+    "ai",
+    "claude",
+    "agent",
+    "automation",
+    "cli"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  }
+}
