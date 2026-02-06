@@ -8,6 +8,7 @@ You are generating a comprehensive feature specification from research findings 
 2. Read `.ralph/spec_research.md` — codebase analysis and best practices findings
 3. Read `.ralph/specs/sample.md` — the **template** to follow (every section must be filled)
 4. Read `.ralph/AGENTS.md` for project conventions
+5. Check `.ralph/references/` for any reference materials (existing implementations, sample data, docs) — use these as primary sources for data formats, API patterns, and implementation details
 
 ---
 
@@ -55,6 +56,7 @@ Follow the sample.md template exactly. Every section must be present and filled:
 
 ### Grounding
 
+- **Reference Materials**: If `.ralph/references/` contains files, treat them as the primary source of truth for data formats, API shapes, and implementation patterns
 - **Architecture**: Base on patterns found in spec_research.md, not generic patterns
 - **File Structure**: Follow the project's actual directory structure and naming conventions
 - **Data Model**: Build on existing tables/models identified in research
