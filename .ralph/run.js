@@ -639,7 +639,7 @@ async function interactivePrompt(preselectedMode = null) {
   // Full mode defaults to background since it can run for hours
   let background = false;
 
-  if (mode === 'debug' || mode === 'decompose' || mode === 'spec') {
+  if (mode === 'debug' || mode === 'decompose') {
     console.log(`\x1b[33m${mode.charAt(0).toUpperCase() + mode.slice(1)} mode always runs in foreground.\x1b[0m\n`);
     background = false;
   } else {
@@ -785,13 +785,18 @@ if (filteredArgs.length === 0) {
   // Debug mode never runs in background
   // Use --no-background or --foreground to override
   const noBackground = args.includes('--no-background') || args.includes('--foreground') || args.includes('-f');
-  const useBackground = (mode === 'debug' || mode === 'decompose' || mode === 'spec') ? false : (noBackground ? false : (background || mode === 'full'));
+  const useBackground = (mode === 'debug' || mode === 'decompose') ? false : (noBackground ? false : (background || mode === 'full'));
 
   // Spec mode: run gather wizard before launching Docker (async wrapper)
+  // The wizard is interactive, but the actual spec work can run in background
   if (mode === 'spec') {
     specGatherWizard(spec).then(() => {
-      setupWindowsSignalHandler();
-      runRalph(spec, mode, iterations, verbose);
+      if (useBackground) {
+        runRalphBackground(spec, mode, iterations, verbose);
+      } else {
+        setupWindowsSignalHandler();
+        runRalph(spec, mode, iterations, verbose);
+      }
     }).catch((err) => {
       console.error(err);
       process.exit(1);

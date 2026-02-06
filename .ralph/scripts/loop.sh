@@ -1389,12 +1389,53 @@ if [ "$MODE" = "spec" ]; then
         echo -e "\033[1;32m  🎉 Spec created and approved in $TOTAL_ITERATIONS iteration(s)\033[0m"
         echo -e "\033[1;32m  Next: node .ralph/run.js $SPEC_NAME plan\033[0m"
     else
-        echo -e "\033[1;33m  ⚠ Spec creation completed but not yet approved\033[0m"
-        echo -e "\033[1;33m  Review .ralph/spec_review.md and .ralph/spec_questions.md\033[0m"
-        echo -e "\033[1;33m  Then run spec mode again to continue refinement\033[0m"
+        echo -e "\033[1;33m  ⚠ Spec needs your input before it can be approved\033[0m"
+        echo -e "\033[1;33m════════════════════════════════════════════════════════════\033[0m"
+        echo ""
+        echo -e "\033[1;36m  📋 WHAT TO DO NEXT:\033[0m"
+        echo ""
+        
+        # Check for unanswered questions
+        QUESTIONS_FILE="./.ralph/spec_questions.md"
+        if [ -f "$QUESTIONS_FILE" ]; then
+            UNANSWERED=$(grep -c '^A:$\|^A: *$' "$QUESTIONS_FILE" 2>/dev/null || echo "0")
+            if [ "$UNANSWERED" -gt 0 ]; then
+                echo -e "  \033[1;33m1. Answer $UNANSWERED question(s) in:\033[0m"
+                echo -e "     \033[1;37m.ralph/spec_questions.md\033[0m"
+                echo -e "     \033[2m(Find lines starting with 'A:' and add your answers)\033[0m"
+                echo ""
+            else
+                echo -e "  \033[1;32m✓ All questions answered in .ralph/spec_questions.md\033[0m"
+                echo ""
+            fi
+        fi
+        
+        # Check for review issues
+        SPEC_REVIEW_FILE="./.ralph/spec_review.md"
+        if [ -f "$SPEC_REVIEW_FILE" ]; then
+            BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+            ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+            if [ "$BLOCKING" -gt 0 ] || [ "$ATTENTION" -gt 0 ]; then
+                echo -e "  \033[1;33m2. Review issues found:\033[0m"
+                echo -e "     \033[1;37m.ralph/spec_review.md\033[0m"
+                [ "$BLOCKING" -gt 0 ] && echo -e "     \033[1;31m❌ $BLOCKING blocking issue(s)\033[0m"
+                [ "$ATTENTION" -gt 0 ] && echo -e "     \033[1;33m⚠️  $ATTENTION item(s) need attention\033[0m"
+                echo ""
+            fi
+        fi
+        
+        # Optional feedback file
+        echo -e "  \033[1;36m3. (Optional) Add general feedback in:\033[0m"
+        echo -e "     \033[1;37m.ralph/user-review.md\033[0m"
+        echo ""
+        
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        echo -e "  \033[1;36m▶ When ready, re-run:\033[0m"
+        echo -e "     \033[1;37mnode .ralph/run.js $SPEC_NAME spec\033[0m"
+        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
     fi
-    echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
-    echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
+    echo ""
+    echo -e "  \033[2mTotal time: $FINAL_FORMATTED | Errors: $ERROR_COUNT\033[0m"
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     echo ""
 
