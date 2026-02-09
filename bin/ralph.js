@@ -26,6 +26,7 @@ program
   .option('-n, --iterations <number>', 'number of iterations', '5')
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'plan', opts);
@@ -38,6 +39,7 @@ program
   .option('-n, --iterations <number>', 'number of iterations', '10')
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'build', opts);
@@ -50,6 +52,7 @@ program
   .option('-n, --iterations <number>', 'number of iterations', '10')
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'review', opts);
@@ -62,6 +65,7 @@ program
   .option('-n, --iterations <number>', 'number of iterations', '5')
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'review-fix', opts);
@@ -75,6 +79,7 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (default for full mode)')
   .option('-f, --foreground', 'force foreground mode')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     // Full mode defaults to background unless --foreground
@@ -88,18 +93,20 @@ program
 program
   .command('debug [spec]')
   .description('Single iteration, verbose, no commits')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
-    await run(spec, 'debug', { iterations: '1', verbose: true });
+    await run(spec, 'debug', { ...opts, iterations: '1', verbose: true });
   });
 
 // ralph decompose <spec>
 program
   .command('decompose [spec]')
   .description('Break large spec into ordered sub-specs')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
-    await run(spec, 'decompose', { iterations: '1', verbose: true });
+    await run(spec, 'decompose', { ...opts, iterations: '1', verbose: true });
   });
 
 // ralph spec [name]
@@ -108,6 +115,8 @@ program
   .description('Create spec interactively: gather -> research -> draft -> review')
   .option('-n, --iterations <number>', 'number of iterations', '8')
   .option('-v, --verbose', 'show full output')
+  .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
   .action(async (name, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(name, 'spec', opts);

@@ -16,7 +16,7 @@
 # Full mode options (via environment variables):
 #   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
-#   FULL_REVIEW_ITERS=5     # Review iterations per cycle (default: 5)
+#   FULL_REVIEW_ITERS=25    # Review iterations per cycle (default: 25)
 #   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
 #
 # Circuit breaker settings (via environment variables):
@@ -133,7 +133,7 @@ elif [ "$MODE" = "full" ]; then
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
     FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-5}
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
-    FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-15}  # More iterations to cover all review items
+    FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
 else
     MODE="build"
@@ -235,6 +235,7 @@ elif [ "$MODE" = "full" ]; then
     [ -f "$(resolve_prompt review/security.md)" ] && echo -e "  \033[1;31m✓\033[0m Security Expert (review/security.md)"
     [ -f "$(resolve_prompt review/perf.md)" ] && echo -e "  \033[1;32m✓\033[0m Performance Expert (review/perf.md)"
     [ -f "$(resolve_prompt review/api.md)" ] && echo -e "  \033[1;34m✓\033[0m API Expert (review/api.md)"
+    [ -f "$(resolve_prompt review/antagonist.md)" ] && echo -e "  \033[0;91m✓\033[0m Antagonist (review/antagonist.md)"
     [ -f "$(resolve_prompt review/general.md)" ] && echo -e "  \033[1;37m✓\033[0m General (review/general.md - fallback)"
     echo ""
 else
@@ -770,18 +771,18 @@ run_single_iteration() {
 }
 
 # Helper function to determine which review specialist to use
-# Returns: ux, db, qa, security, perf, or api
+# Returns: ux, db, qa, security, perf, api, or antagonist
 get_next_review_specialist() {
     local checklist_file="./.ralph/review_checklist.md"
-    
+
     if [ ! -f "$checklist_file" ]; then
         echo "qa"
         return
     fi
-    
+
     # Find the first unchecked item and check its tag
     local next_item=$(grep -m1 '^\- \[ \]' "$checklist_file" 2>/dev/null || echo "")
-    
+
     if echo "$next_item" | grep -qi '\[SEC'; then
         echo "security"
     elif echo "$next_item" | grep -qi '\[UX\]'; then
@@ -792,6 +793,8 @@ get_next_review_specialist() {
         echo "perf"
     elif echo "$next_item" | grep -qi '\[API\]'; then
         echo "api"
+    elif echo "$next_item" | grep -qi '\[ANTAG'; then
+        echo "antagonist"
     else
         echo "qa"
     fi
@@ -1561,8 +1564,9 @@ if [ "$MODE" = "full" ]; then
                 DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
                 PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
                 API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
-                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+                ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
+                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
             fi
             
             # Determine which specialist should handle the next item
@@ -1593,6 +1597,11 @@ if [ "$MODE" = "full" ]; then
                     SPECIALIST_NAME="API"
                     SPECIALIST_COLOR="\033[1;34m"  # Blue
                     ;;
+                antagonist)
+                    REVIEW_PROMPT="$(resolve_prompt review/antagonist.md)"
+                    SPECIALIST_NAME="Antagonist"
+                    SPECIALIST_COLOR="\033[0;91m"  # Bright red
+                    ;;
                 *)
                     REVIEW_PROMPT="$(resolve_prompt review/qa.md)"
                     SPECIALIST_NAME="QA"
@@ -1606,9 +1615,9 @@ if [ "$MODE" = "full" ]; then
                 SPECIALIST_NAME="General"
                 SPECIALIST_COLOR="\033[1;37m"
             fi
-            
+
             echo -e "  ${SPECIALIST_COLOR}🔍 Specialist: $SPECIALIST_NAME\033[0m"
-            
+
             if ! run_single_iteration "$REVIEW_PROMPT" $TOTAL_ITERATIONS "REVIEW-$SPECIALIST_NAME ($REVIEW_ITERATION/$FULL_REVIEW_ITERS)"; then
                 echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
                 if check_circuit_breaker; then
@@ -1779,9 +1788,10 @@ while true; do
             DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
             PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
             API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
-            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
-            
+            ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
+            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+
             # Determine which specialist should handle the next item
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
@@ -1804,6 +1814,10 @@ while true; do
                 api)
                     PROMPT_FILE="$(resolve_prompt review/api.md)"
                     echo -e "  \033[1;34m🔍 Specialist: API Expert\033[0m"
+                    ;;
+                antagonist)
+                    PROMPT_FILE="$(resolve_prompt review/antagonist.md)"
+                    echo -e "  \033[0;91m🔍 Specialist: Antagonist\033[0m"
                     ;;
                 *)
                     PROMPT_FILE="$(resolve_prompt review/qa.md)"
