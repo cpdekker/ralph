@@ -43,6 +43,8 @@ run_spec_select() {
     if [ -z "$json_text" ]; then
         json_text="$select_result"
     fi
+    # Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+    json_text=$(echo "$json_text" | sed '/^```/d')
 
     local action=$(echo "$json_text" | jq -r '.action // empty' 2>/dev/null)
     local sub_spec_name=$(echo "$json_text" | jq -r '.sub_spec_name // empty' 2>/dev/null)
@@ -148,6 +150,8 @@ run_master_completion_check() {
     if [ -z "$json_text" ]; then
         json_text="$check_result"
     fi
+    # Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+    json_text=$(echo "$json_text" | sed '/^```/d')
 
     local is_complete=$(echo "$json_text" | jq -r '.complete // false' 2>/dev/null)
     local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
