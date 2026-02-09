@@ -28,6 +28,7 @@ Each review item must be tagged with ONE of these specialist types:
 | `[SEC]` | Security Specialist | Authentication, authorization, input validation, secrets, encryption |
 | `[PERF]` | Performance Specialist | Algorithm complexity, caching, lazy loading, bundle optimization |
 | `[API]` | API Specialist | REST endpoints, GraphQL resolvers, API contracts, request/response handling |
+| `[ANTAG]` | Antagonist Reviewer | AI code smell detection, over-engineering, cargo-culted patterns, hallucinated APIs |
 
 ---
 
@@ -62,6 +63,13 @@ Analyze the **file contents** to determine the best specialist:
 - Contains: JSX/TSX, CSS imports, `className`, `style`
 - Contains: hooks like `useState`, `useEffect`, `useRef`
 - Contains: accessibility attributes (`aria-*`, `role=`)
+
+**[ANTAG] - AI code smell review (applied broadly):**
+- Contains: excessive comments explaining obvious code, over-documented simple functions
+- Contains: unused parameters, dead code paths, premature abstractions
+- Contains: generic catch-all error handling, defensive null checks on guaranteed values
+- Contains: factory/strategy patterns with only one implementation
+- Exhibits: suspiciously uniform file structure, no codebase-specific conventions followed
 
 **[QA] - Default for everything else:**
 - Business logic, utilities, services
@@ -119,6 +127,7 @@ Add severity to help prioritize reviews:
 - `[DB-CRITICAL]` - Potential data loss scenario
 - `[UX]` - Standard frontend review (default high priority)
 - `[QA-MINOR]` - Code style suggestion
+- `[ANTAG]` - AI code smell check on new implementation
 
 ---
 
@@ -173,7 +182,15 @@ Brief description of the review scope and what has been implemented.
   - Files: `path/to/component.tsx`
   - Spec reference: [Section in spec]
 
-### 🔍 QA/General Reviews (Priority 6)
+### 🤖 Antagonist Reviews (Priority 6)
+- [ ] `[ANTAG]` **[Core Implementation]** - Check for AI code smells and over-engineering
+  - Files: `path/to/main-implementation-files`
+  - Spec reference: [Section in spec]
+- [ ] `[ANTAG]` **[Error Handling Patterns]** - Verify error handling is specific, not generic
+  - Files: `path/to/files-with-error-handling`
+  - Spec reference: [Section in spec]
+
+### 🔍 QA/General Reviews (Priority 7)
 - [ ] `[QA]` **[Business Logic]** - Verify core functionality
   - Files: `path/to/service.ts`
   - Spec reference: [Section in spec]
@@ -201,6 +218,7 @@ Brief description of the review scope and what has been implemented.
   - API: [count]
   - PERF: [count]
   - UX: [count]
+  - ANTAG: [count]
   - QA: [count]
 - Reviewed: 0
 - Issues found: 0
@@ -211,7 +229,7 @@ _Issues will be added here during review_
 
 ### Guidelines for Creating the Checklist
 
-1. **Tag every item** - Each item MUST have a specialist tag (e.g., `[UX]`, `[DB]`, `[QA]`, `[SEC]`, `[PERF]`, `[API]`)
+1. **Tag every item** - Each item MUST have a specialist tag (e.g., `[UX]`, `[DB]`, `[QA]`, `[SEC]`, `[PERF]`, `[API]`, `[ANTAG]`)
 2. **Add severity when needed** - Append `-CRITICAL` or `-MINOR` for non-standard priority
 3. **Prioritize security** - Security items should be reviewed first
 4. **Group by specialist** - Organize items under specialist sections

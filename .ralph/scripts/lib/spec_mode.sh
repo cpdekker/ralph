@@ -85,7 +85,7 @@ run_spec_mode() {
             fi
 
             # Show unanswered question count
-            UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null || echo "0")
+            UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null) || UNANSWERED=0
             if [ "$UNANSWERED" -gt 0 ]; then
                 echo -e "  \033[1;34mℹ\033[0m  $UNANSWERED unanswered questions remaining"
                 echo -e "  \033[1;34mℹ\033[0m  Edit .ralph/spec_questions.md to answer them, then this phase will incorporate them"
@@ -136,8 +136,8 @@ run_spec_mode() {
     SPEC_REVIEW_FILE="./.ralph/spec_review.md"
     SHOULD_RUN_SPEC_FIX=false
     if [ -f "$SPEC_REVIEW_FILE" ]; then
-        SPEC_FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
-        SPEC_FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+        SPEC_FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null) || SPEC_FIX_BLOCKING=0
+        SPEC_FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null) || SPEC_FIX_ATTENTION=0
         if [ "$SPEC_FIX_BLOCKING" -gt 0 ] || [ "$SPEC_FIX_ATTENTION" -gt 0 ]; then
             SHOULD_RUN_SPEC_FIX=true
         fi
@@ -195,7 +195,7 @@ run_spec_mode() {
         # Check for unanswered questions
         QUESTIONS_FILE="./.ralph/spec_questions.md"
         if [ -f "$QUESTIONS_FILE" ]; then
-            UNANSWERED=$(grep -c '^A:$\|^A: *$' "$QUESTIONS_FILE" 2>/dev/null || echo "0")
+            UNANSWERED=$(grep -c '^A:$\|^A: *$' "$QUESTIONS_FILE" 2>/dev/null) || UNANSWERED=0
             if [ "$UNANSWERED" -gt 0 ]; then
                 echo -e "  \033[1;33m1. Answer $UNANSWERED question(s) in:\033[0m"
                 echo -e "     \033[1;37m.ralph/spec_questions.md\033[0m"
@@ -210,8 +210,8 @@ run_spec_mode() {
         # Check for review issues
         SPEC_REVIEW_FILE="./.ralph/spec_review.md"
         if [ -f "$SPEC_REVIEW_FILE" ]; then
-            BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
-            ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+            BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null) || BLOCKING=0
+            ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null) || ATTENTION=0
             if [ "$BLOCKING" -gt 0 ] || [ "$ATTENTION" -gt 0 ]; then
                 echo -e "  \033[1;33m2. Review issues found:\033[0m"
                 echo -e "     \033[1;37m.ralph/spec_review.md\033[0m"
