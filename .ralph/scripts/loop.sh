@@ -381,7 +381,7 @@ while true; do
     if [ "$MODE" = "build" ]; then
         PLAN_FILE="./.ralph/implementation_plan.md"
         if [ -f "$PLAN_FILE" ]; then
-            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
@@ -395,7 +395,7 @@ while true; do
     elif [ "$MODE" = "review" ]; then
         CHECKLIST_FILE="./.ralph/review_checklist.md"
         if [ -f "$CHECKLIST_FILE" ]; then
-            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
@@ -406,11 +406,11 @@ while true; do
             fi
 
             # Count items by specialist type
-            SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
+            UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
+            DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
+            PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
+            API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
             QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
             echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
 
@@ -455,8 +455,8 @@ while true; do
     elif [ "$MODE" = "review-fix" ]; then
         REVIEW_FILE="./.ralph/review.md"
         if [ -f "$REVIEW_FILE" ]; then
-            BLOCKING_COUNT=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
-            ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            BLOCKING_COUNT=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || BLOCKING_COUNT=0
+            ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null) || ATTENTION_COUNT=0
             if [ "$BLOCKING_COUNT" -eq 0 ] && [ "$ATTENTION_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"

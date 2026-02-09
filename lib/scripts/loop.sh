@@ -1502,7 +1502,7 @@ if [ "$MODE" = "spec" ]; then
             fi
 
             # Show unanswered question count
-            UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null || echo "0")
+            UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null) || UNANSWERED=0
             if [ "$UNANSWERED" -gt 0 ]; then
                 echo -e "  \033[1;34mℹ\033[0m  $UNANSWERED unanswered questions remaining"
                 echo -e "  \033[1;34mℹ\033[0m  Edit .ralph/spec_questions.md to answer them, then this phase will incorporate them"
@@ -1553,8 +1553,8 @@ if [ "$MODE" = "spec" ]; then
     SPEC_REVIEW_FILE="./.ralph/spec_review.md"
     SHOULD_RUN_SPEC_FIX=false
     if [ -f "$SPEC_REVIEW_FILE" ]; then
-        SPEC_FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
-        SPEC_FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null || echo "0")
+        SPEC_FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null) || SPEC_FIX_BLOCKING=0
+        SPEC_FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null) || SPEC_FIX_ATTENTION=0
         if [ "$SPEC_FIX_BLOCKING" -gt 0 ] || [ "$SPEC_FIX_ATTENTION" -gt 0 ]; then
             SHOULD_RUN_SPEC_FIX=true
         fi
@@ -1721,7 +1721,7 @@ if [ "$MODE" = "full" ]; then
             # Show progress
             PLAN_FILE="./.ralph/implementation_plan.md"
             if [ -f "$PLAN_FILE" ]; then
-                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 echo -e "  \033[1;34mℹ\033[0m  Implementation plan has $UNCHECKED_COUNT items"
             fi
         done
@@ -1752,7 +1752,7 @@ if [ "$MODE" = "full" ]; then
             # Check if build is complete before running
             PLAN_FILE="./.ralph/implementation_plan.md"
             if [ -f "$PLAN_FILE" ]; then
-                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                     echo -e "  \033[1;32m✓\033[0m All build tasks complete!"
                     break
@@ -1819,19 +1819,19 @@ if [ "$MODE" = "full" ]; then
             # Check if review is complete before running
             CHECKLIST_FILE="./.ralph/review_checklist.md"
             if [ -f "$CHECKLIST_FILE" ]; then
-                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                     echo -e "  \033[1;32m✓\033[0m All review items complete!"
                     break
                 fi
-                
+
                 # Count items by specialist type
-                SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-                ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+                SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
+                UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
+                DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
+                PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
+                API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
+                ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null) || ANTAG_COUNT=0
                 QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
                 echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
             fi
@@ -1914,8 +1914,8 @@ if [ "$MODE" = "full" ]; then
         REVIEW_FILE="./.ralph/review.md"
         SHOULD_RUN_FIX=false
         if [ -f "$REVIEW_FILE" ]; then
-            FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
-            FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            FIX_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || FIX_BLOCKING=0
+            FIX_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null) || FIX_ATTENTION=0
             if [ "$FIX_BLOCKING" -gt 0 ] || [ "$FIX_ATTENTION" -gt 0 ]; then
                 SHOULD_RUN_FIX=true
             fi
@@ -1933,8 +1933,8 @@ if [ "$MODE" = "full" ]; then
 
                 # Check if all issues are resolved before running
                 if [ -f "$REVIEW_FILE" ]; then
-                    REMAINING_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
-                    REMAINING_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+                    REMAINING_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || REMAINING_BLOCKING=0
+                    REMAINING_ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null) || REMAINING_ATTENTION=0
                     if [ "$REMAINING_BLOCKING" -eq 0 ] && [ "$REMAINING_ATTENTION" -eq 0 ]; then
                         echo -e "  \033[1;32m✓\033[0m All review issues resolved!"
                         break
@@ -2029,7 +2029,7 @@ while true; do
     if [ "$MODE" = "build" ]; then
         PLAN_FILE="./.ralph/implementation_plan.md"
         if [ -f "$PLAN_FILE" ]; then
-            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null || echo "0")
+            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
@@ -2043,7 +2043,7 @@ while true; do
     elif [ "$MODE" = "review" ]; then
         CHECKLIST_FILE="./.ralph/review_checklist.md"
         if [ -f "$CHECKLIST_FILE" ]; then
-            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
@@ -2052,14 +2052,14 @@ while true; do
                 echo ""
                 break
             fi
-            
+
             # Count items by specialist type
-            SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
-            ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null || echo "0")
+            SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
+            UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
+            DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
+            PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
+            API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
+            ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null) || ANTAG_COUNT=0
             QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
             echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
 
@@ -2109,8 +2109,8 @@ while true; do
         # Check if there are blocking issues to fix
         REVIEW_FILE="./.ralph/review.md"
         if [ -f "$REVIEW_FILE" ]; then
-            BLOCKING_COUNT=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null || echo "0")
-            ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null || echo "0")
+            BLOCKING_COUNT=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || BLOCKING_COUNT=0
+            ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null) || ATTENTION_COUNT=0
             if [ "$BLOCKING_COUNT" -eq 0 ] && [ "$ATTENTION_COUNT" -eq 0 ]; then
                 echo ""
                 echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
