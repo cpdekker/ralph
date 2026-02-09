@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|insights] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -54,7 +54,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "insights" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -68,9 +68,19 @@ if [ -z "$SPEC_NAME" ]; then
     exit 1
 fi
 
+# Insights configuration (opt-in via environment variables)
+INSIGHTS_ENABLED=${RALPH_INSIGHTS:-false}
+INSIGHTS_GITHUB=${RALPH_INSIGHTS_GITHUB:-false}
+INSIGHTS_DIR="./.ralph/insights"
+INSIGHTS_LOGS_DIR="$INSIGHTS_DIR/iteration_logs"
+
+if [ "$INSIGHTS_ENABLED" = "true" ]; then
+    mkdir -p "$INSIGHTS_LOGS_DIR"
+fi
+
 # Verify spec file exists (skip for spec mode — spec doesn't exist yet)
 SPEC_FILE="./.ralph/specs/${SPEC_NAME}.md"
-if [ "$MODE" != "spec" ]; then
+if [ "$MODE" != "spec" ] && [ "$MODE" != "insights" ]; then
     if [ ! -f "$SPEC_FILE" ]; then
         echo "Error: Spec file not found: $SPEC_FILE"
         echo "Available specs:"
@@ -128,6 +138,11 @@ elif [ "$MODE" = "spec" ]; then
     SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
+elif [ "$MODE" = "insights" ]; then
+    # Insights mode: run analysis on existing iteration logs
+    MAX_ITERATIONS=1
+    VERBOSE=true
+    INSIGHTS_ENABLED=true
 elif [ "$MODE" = "full" ]; then
     # Full mode: cycles of plan → build → review → completion check
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
@@ -178,6 +193,8 @@ elif [ "$MODE" = "decompose" ]; then
 elif [ "$MODE" = "full" ]; then
     echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
+elif [ "$MODE" = "insights" ]; then
+    echo "Action:  Analyze iteration logs"
 elif [ "$MODE" = "debug" ]; then
     echo "⚠️  DEBUG MODE - No commits will be made"
 else
@@ -187,6 +204,7 @@ else
 fi
 echo "Branch:  $CURRENT_BRANCH"
 echo "Verbose: $VERBOSE"
+[ "$INSIGHTS_ENABLED" = "true" ] && echo "Insights: enabled$([ "$INSIGHTS_GITHUB" = "true" ] && echo " (+ GitHub issues)")"
 echo "Circuit Breaker: $MAX_CONSECUTIVE_FAILURES consecutive failures"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -202,6 +220,12 @@ if [ "$MODE" = "spec" ]; then
     # Verify spec_seed.md exists
     if [ ! -f "./.ralph/spec_seed.md" ]; then
         echo "Error: .ralph/spec_seed.md not found. Run the spec wizard first (ralph spec <name>)"
+        exit 1
+    fi
+elif [ "$MODE" = "insights" ]; then
+    # Insights mode uses the insights prompt
+    if [ ! -f "$(resolve_prompt insights.md)" ]; then
+        echo "Error: insights.md not found (required for insights mode)"
         exit 1
     fi
 elif [ "$MODE" = "full" ]; then
@@ -690,6 +714,217 @@ generate_summary() {
     echo ""
 }
 
+# Capture structured iteration summary as JSON (for insights)
+capture_iteration_summary() {
+    if [ "$INSIGHTS_ENABLED" != "true" ]; then
+        return 0
+    fi
+
+    local log_file=$1
+    local iteration_num=$2
+    local phase_name=$3
+    local exit_code=$4
+    local turn_start=$5
+
+    local now=$(date +%s)
+    local duration=$((now - turn_start))
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    # Reuse the same metric extraction patterns from generate_summary()
+    local files_changed=$(grep -o '"tool":"write"\|"tool":"str_replace_editor"\|"tool":"create"\|"tool":"edit"' "$log_file" 2>/dev/null | wc -l)
+    local commits=$(grep -o 'git commit' "$log_file" 2>/dev/null | wc -l)
+    local tests=$(grep -o 'npm test\|npm run test\|npx nx test\|jest\|vitest' "$log_file" 2>/dev/null | wc -l)
+
+    # Get modified files and recent commits
+    local modified_files=$(git diff --name-only HEAD~1 2>/dev/null | head -10 | tr '\n' ',' | sed 's/,$//')
+    local recent_commits=$(git log --oneline -3 2>/dev/null | tr '\n' '|' | sed 's/|$//')
+
+    # Extract error snippet if exit code was non-zero
+    local error_snippet=""
+    if [ "$exit_code" -ne 0 ]; then
+        error_snippet=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | head -c 200)
+        # Escape JSON special characters
+        error_snippet=$(echo "$error_snippet" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g')
+    fi
+
+    local branch=$(git branch --show-current 2>/dev/null)
+
+    # Escape JSON special characters in dynamic fields
+    modified_files=$(echo "$modified_files" | sed 's/\\/\\\\/g; s/"/\\"/g')
+    recent_commits=$(echo "$recent_commits" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+    local output_file="$INSIGHTS_LOGS_DIR/${SPEC_NAME}_iter_${iteration_num}.json"
+
+    cat > "$output_file" << INSIGHTS_EOF
+{
+  "timestamp": "$timestamp",
+  "spec_name": "$SPEC_NAME",
+  "mode": "$MODE",
+  "phase": "$phase_name",
+  "iteration": $iteration_num,
+  "exit_code": $exit_code,
+  "duration_seconds": $duration,
+  "files_modified_count": $files_changed,
+  "git_commits": $commits,
+  "tests_run": $tests,
+  "modified_files": "$modified_files",
+  "recent_commits": "$recent_commits",
+  "error_snippet": "$error_snippet",
+  "branch": "$branch"
+}
+INSIGHTS_EOF
+}
+
+# Run insights analysis (called at phase boundaries)
+run_insights_analysis() {
+    if [ "$INSIGHTS_ENABLED" != "true" ]; then
+        return 0
+    fi
+
+    local phase_name=${1:-""}
+
+    # Guard: skip if no iteration logs exist
+    local log_count=$(ls -1 "$INSIGHTS_LOGS_DIR"/*.json 2>/dev/null | wc -l)
+    if [ "$log_count" -eq 0 ]; then
+        echo -e "  \033[1;34mℹ\033[0m  Insights: no iteration logs to analyze"
+        return 0
+    fi
+
+    echo ""
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "\033[1;35m  📊 INSIGHTS ANALYSIS${phase_name:+ (after $phase_name phase)}\033[0m"
+    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo ""
+
+    local insights_log="$TEMP_DIR/insights_analysis.log"
+
+    if [ "$VERBOSE" = true ]; then
+        cat "$(resolve_prompt insights.md)" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose 2>&1 | tee "$insights_log"
+    else
+        echo -e "  \033[1;36m⏳\033[0m Running insights analysis on $log_count iteration logs..."
+
+        cat "$(resolve_prompt insights.md)" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$insights_log" 2>&1 &
+
+        local INSIGHTS_PID=$!
+        spin $INSIGHTS_PID
+        wait $INSIGHTS_PID
+        local INSIGHTS_EXIT=$?
+
+        if [ $INSIGHTS_EXIT -ne 0 ]; then
+            echo -e "  \033[1;33m⚠\033[0m Insights analysis failed (non-fatal, continuing)"
+            return 0
+        fi
+    fi
+
+    echo -e "  \033[1;32m✓\033[0m Insights analysis complete"
+
+    # Commit insights artifacts
+    if [ -f "$INSIGHTS_DIR/insights.md" ]; then
+        git add "$INSIGHTS_DIR/" 2>/dev/null || true
+        git commit -m "ralph: update insights analysis${phase_name:+ (after $phase_name)}" 2>/dev/null || true
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+    fi
+
+    # Optionally create GitHub issues
+    if [ "$INSIGHTS_GITHUB" = "true" ]; then
+        run_insights_github_issues
+    fi
+
+    return 0
+}
+
+# Create GitHub issues for HIGH/CRITICAL findings
+run_insights_github_issues() {
+    # Guard: need GIT_TOKEN
+    if [ -z "${GIT_TOKEN:-}" ]; then
+        echo -e "  \033[1;33m⚠\033[0m Insights GitHub: GIT_TOKEN not set, skipping issue creation"
+        return 0
+    fi
+
+    # Guard: need a github.com remote
+    local remote_url=$(git remote get-url origin 2>/dev/null)
+    if ! echo "$remote_url" | grep -q 'github.com'; then
+        echo -e "  \033[1;33m⚠\033[0m Insights GitHub: not a GitHub remote, skipping issue creation"
+        return 0
+    fi
+
+    # Guard: need insights.md to exist
+    if [ ! -f "$INSIGHTS_DIR/insights.md" ]; then
+        echo -e "  \033[1;33m⚠\033[0m Insights GitHub: no insights.md found, skipping"
+        return 0
+    fi
+
+    # Extract owner/repo from remote URL
+    local owner_repo=$(echo "$remote_url" | sed -E 's|.*github\.com[:/]([^/]+/[^/.]+)(\.git)?$|\1|')
+
+    echo -e "  \033[1;36m⏳\033[0m Generating GitHub issues for critical findings..."
+
+    local issues_log="$TEMP_DIR/insights_github.log"
+    local issues_result
+
+    issues_result=$(cat "$(resolve_prompt insights_github.md)" | claude -p \
+        --dangerously-skip-permissions \
+        --output-format=json 2>"$issues_log")
+
+    # Parse Claude's JSON response
+    local json_text
+    json_text=$(echo "$issues_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$issues_result"
+    fi
+    # Strip markdown code fences
+    json_text=$(echo "$json_text" | sed '/^```/d')
+
+    # Extract issues array
+    local issue_count=$(echo "$json_text" | jq -r '.issues | length' 2>/dev/null)
+
+    if [ -z "$issue_count" ] || [ "$issue_count" = "0" ] || [ "$issue_count" = "null" ]; then
+        echo -e "  \033[1;32m✓\033[0m No HIGH/CRITICAL findings to report"
+        return 0
+    fi
+
+    echo -e "  \033[1;34mℹ\033[0m  Creating $issue_count GitHub issue(s)..."
+
+    local i=0
+    while [ $i -lt $issue_count ]; do
+        local title=$(echo "$json_text" | jq -r ".issues[$i].title" 2>/dev/null)
+        local body=$(echo "$json_text" | jq -r ".issues[$i].body" 2>/dev/null)
+        local severity=$(echo "$json_text" | jq -r ".issues[$i].severity" 2>/dev/null)
+
+        # Create label list
+        local labels="ralph-insight,$severity"
+
+        # Create issue via GitHub API
+        local response
+        response=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://api.github.com/repos/$owner_repo/issues" \
+            -H "Authorization: token $GIT_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "$(jq -n --arg title "$title" --arg body "$body" --argjson labels "[\"ralph-insight\", \"$severity\"]" \
+                '{title: $title, body: $body, labels: $labels}')")
+
+        local http_code=$(echo "$response" | tail -1)
+        local response_body=$(echo "$response" | head -n -1)
+
+        if [ "$http_code" = "201" ]; then
+            local issue_url=$(echo "$response_body" | jq -r '.html_url' 2>/dev/null)
+            echo -e "  \033[1;32m✓\033[0m Created: $issue_url"
+        else
+            echo -e "  \033[1;31m✗\033[0m Failed to create issue: HTTP $http_code"
+        fi
+
+        i=$((i + 1))
+    done
+
+    return 0
+}
+
 # Helper function to run a single iteration with a given prompt
 run_single_iteration() {
     local prompt_file=$1
@@ -751,22 +986,25 @@ run_single_iteration() {
     
     # Generate and display summary
     generate_summary "$LOG_FILE" "$iteration_num" "$TURN_START_TIME"
-    
+
+    # Capture iteration summary for insights
+    capture_iteration_summary "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME"
+
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
         echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
         return 0
     fi
-    
+
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-    
+
     # Update checkpoint after successful iteration
     save_state "$phase_name" "$iteration_num" "Completed successfully"
-    
+
     return 0
 }
 
@@ -1158,6 +1396,31 @@ run_spec_signoff_check() {
     fi
 }
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# INSIGHTS MODE - Runs analysis on existing iteration logs
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ "$MODE" = "insights" ]; then
+    echo ""
+    echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;35m║              INSIGHTS ANALYSIS MODE                        ║\033[0m"
+    echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+
+    run_insights_analysis "standalone"
+
+    # Calculate final total elapsed time
+    FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+    FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+
+    echo ""
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo -e "\033[1;32m  Insights analysis complete in $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo ""
+
+    exit 0
+fi
+
 if [ "$MODE" = "spec" ]; then
     TOTAL_ITERATIONS=0
     SPEC_READY=false
@@ -1472,7 +1735,9 @@ if [ "$MODE" = "full" ]; then
         fi
         
         echo -e "  \033[1;32m✓\033[0m Plan phase complete ($PLAN_ITERATION iterations)"
-        
+
+        run_insights_analysis "plan"
+
         # ─────────────────────────────────────────────────────────────────────
         # BUILD PHASE
         # ─────────────────────────────────────────────────────────────────────
@@ -1513,7 +1778,9 @@ if [ "$MODE" = "full" ]; then
         fi
         
         echo -e "  \033[1;32m✓\033[0m Build phase complete"
-        
+
+        run_insights_analysis "build"
+
         # ─────────────────────────────────────────────────────────────────────
         # REVIEW PHASE (with setup on first iteration of each cycle)
         # ─────────────────────────────────────────────────────────────────────
@@ -1637,6 +1904,8 @@ if [ "$MODE" = "full" ]; then
         
         echo -e "  \033[1;32m✓\033[0m Review phase complete"
 
+        run_insights_analysis "review"
+
         # ─────────────────────────────────────────────────────────────────────
         # REVIEW-FIX PHASE
         # ─────────────────────────────────────────────────────────────────────
@@ -1691,6 +1960,8 @@ if [ "$MODE" = "full" ]; then
             fi
 
             echo -e "  \033[1;32m✓\033[0m Review-fix phase complete"
+
+            run_insights_analysis "review-fix"
         else
             echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
         fi
@@ -1906,6 +2177,9 @@ while true; do
     # Generate and display summary
     generate_summary "$LOG_FILE" "$ITERATION" "$TURN_START_TIME"
 
+    # Capture iteration summary for insights
+    capture_iteration_summary "$LOG_FILE" "$ITERATION" "$MODE" "$CLAUDE_EXIT" "$TURN_START_TIME"
+
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
         echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
@@ -1921,6 +2195,9 @@ while true; do
     # Update checkpoint
     save_state "$MODE" "$ITERATION" "Completed"
 done
+
+# Run insights analysis at end of standard mode
+run_insights_analysis "$MODE"
 
 # Calculate final total elapsed time
 FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))

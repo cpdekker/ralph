@@ -27,6 +27,8 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'plan', opts);
@@ -40,6 +42,8 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'build', opts);
@@ -53,6 +57,8 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'review', opts);
@@ -66,6 +72,8 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'review-fix', opts);
@@ -80,6 +88,8 @@ program
   .option('-b, --background', 'run in background (default for full mode)')
   .option('-f, --foreground', 'force foreground mode')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     // Full mode defaults to background unless --foreground
@@ -94,6 +104,8 @@ program
   .command('debug [spec]')
   .description('Single iteration, verbose, no commits')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'debug', { ...opts, iterations: '1', verbose: true });
@@ -104,6 +116,8 @@ program
   .command('decompose [spec]')
   .description('Break large spec into ordered sub-specs')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (spec, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(spec, 'decompose', { ...opts, iterations: '1', verbose: true });
@@ -117,9 +131,23 @@ program
   .option('-v, --verbose', 'show full output')
   .option('-b, --background', 'run in background (Ralph clones repo)')
   .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
   .action(async (name, opts) => {
     const { run } = require('../lib/commands/mode');
     await run(name, 'spec', opts);
+  });
+
+// ralph insights [spec]
+program
+  .command('insights [spec]')
+  .description('Run insights analysis on existing iteration logs')
+  .option('--github', 'create GitHub issues for HIGH/CRITICAL findings')
+  .option('-v, --verbose', 'show full output')
+  .option('-y, --yes', 'skip interactive prompts')
+  .action(async (spec, opts) => {
+    const { run } = require('../lib/commands/mode');
+    await run(spec, 'insights', { ...opts, iterations: '1', verbose: true, insights: true, insightsGithub: !!opts.github });
   });
 
 // ralph run (interactive mode)
