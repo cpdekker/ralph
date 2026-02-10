@@ -28,7 +28,7 @@ Analyze whether all requirements from the spec have been implemented and the rev
 ALL of the following must be true:
 
 1. **All spec requirements are implemented** - Every feature and requirement in `active.md` has corresponding working code
-2. **No unchecked plan items remain** - All items in `implementation_plan.md` are marked with `[x]`
+2. **No actionable unchecked plan items remain** - All items in `implementation_plan.md` that the agent can perform are marked with `[x]`. Items tagged `[DEPLOYMENT]`, `[MANUAL]`, or that explicitly require human intervention (e.g., running SQL migrations in production, manual QA in external systems, deploying to environments) should be **excluded** from the completeness count — these are post-merge steps the agent cannot perform.
 3. **No critical/blocking review issues** - If `review.md` exists, no "❌ BLOCKING" issues remain unaddressed
 4. **Tests pass** - The implementation has passing tests
 5. **No [BLOCKED] items** - No items are marked as blocked in the implementation plan
@@ -73,6 +73,7 @@ Count and report:
    - Completed items (`[x]`)
    - Remaining items (`[ ]`)
    - Blocked items (`[BLOCKED]`)
+   - Manual/deployment items (`[ ]` items tagged `[DEPLOYMENT]`, `[MANUAL]`, or requiring human intervention) — these do NOT count as incomplete
 
 3. **Review Status** (if review.md exists)
    - Total issues found
@@ -96,20 +97,21 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
 {
   "complete": true,
   "confidence": 0.95,
-  "reason": "All 12 spec requirements implemented, all 23 plan items complete, 0 blocking issues",
+  "reason": "All 12 spec requirements implemented, all 23 actionable plan items complete (2 manual/deployment items excluded), 0 blocking issues",
   "metrics": {
     "spec_requirements_met": 12,
     "spec_requirements_total": 12,
     "plan_items_complete": 23,
-    "plan_items_total": 23,
+    "plan_items_total": 25,
+    "plan_items_manual": 2,
     "plan_items_blocked": 0,
     "blocking_issues": 0,
     "attention_issues": 2,
     "minor_issues": 3
   },
   "caveats": [
-    "2 minor code quality suggestions remain",
-    "Manual testing of edge case X recommended"
+    "2 manual/deployment items remain (SQL migration, manual QA) — require human intervention",
+    "2 minor code quality suggestions remain"
   ]
 }
 ```
@@ -125,6 +127,7 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
     "spec_requirements_total": 12,
     "plan_items_complete": 18,
     "plan_items_total": 23,
+    "plan_items_manual": 0,
     "plan_items_blocked": 1,
     "blocking_issues": 2,
     "attention_issues": 4,
@@ -174,7 +177,8 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
 ## Important
 
 - Be thorough but decisive
-- When in doubt, err on the side of "incomplete" - it's better to do one more cycle than ship broken code
+- When in doubt about **code completeness**, err on the side of "complete" - the user can review and determine whether or not more cycles are needed.
+- Do NOT hold completion hostage to items the agent cannot perform (deployment, manual testing in external systems, infrastructure provisioning) — list these as caveats instead
 - Focus on the spec requirements - the spec is the source of truth
 - Ignore nice-to-haves that weren't in the original spec
 - Factor in blocked items - they may indicate dependency issues
