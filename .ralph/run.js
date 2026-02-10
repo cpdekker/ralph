@@ -110,7 +110,7 @@ function checkDockerImage(targetImageName = imageName) {
     });
     if (!images.split('\n').includes(targetImageName)) {
       console.log(`Building ${targetImageName} image...`);
-      execSync(`docker build -t ${targetImageName} -f .ralph/docker/Dockerfile .`, {
+      execSync(`docker build -t ${targetImageName} -f .devcontainer/Dockerfile .`, {
         stdio: 'inherit',
         cwd: rootDir,
       });
@@ -371,6 +371,8 @@ function runRalphBackground(spec, mode, iterations, verbose) {
   const dockerArgs = [
     'run',
     '-d',  // Detached mode
+    '--cap-add=NET_ADMIN',
+    '--cap-add=NET_RAW',
     '--name', containerName,
     '--env-file', '.ralph/.env',
     '-e', `RALPH_REPO_URL=${repoUrl}`,
@@ -464,6 +466,8 @@ function runRalph(spec, mode, iterations, verbose) {
     'run',
     '-it',
     '--rm',
+    '--cap-add=NET_ADMIN',
+    '--cap-add=NET_RAW',
     '--env-file',
     '.ralph/.env',
     '-v',

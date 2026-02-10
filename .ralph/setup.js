@@ -549,7 +549,7 @@ async function buildDockerImage(rl) {
     console.log('');
 
     try {
-        execSync(`docker build -t ${imageName} -f .ralph/docker/Dockerfile .`, {
+        execSync(`docker build -t ${imageName} -f .devcontainer/Dockerfile .`, {
             cwd: rootDir,
             stdio: 'inherit',
         });

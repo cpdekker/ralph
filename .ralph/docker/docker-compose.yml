@@ -5,11 +5,14 @@ services:
   ralph:
     build:
       context: ../..
-      dockerfile: .ralph/docker/Dockerfile
+      dockerfile: .devcontainer/Dockerfile
     container_name: ralph-wiggum
     stdin_open: true
     tty: true
     working_dir: /workspace
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
     env_file:
       - ../.env
     volumes:

@@ -11,7 +11,7 @@ const imageName = `ralph-wiggum-${repoName}`;
 console.log(`\x1b[36mBuilding ${imageName} image...\x1b[0m`);
 
 try {
-  execSync(`docker build -t ${imageName} -f .ralph/docker/Dockerfile .`, {
+  execSync(`docker build -t ${imageName} -f .devcontainer/Dockerfile .`, {
     stdio: 'inherit',
     cwd: rootDir,
   });
