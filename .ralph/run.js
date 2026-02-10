@@ -185,6 +185,24 @@ async function specGatherWizard(specName) {
   console.log('\n\x1b[35m📋 Spec Gather Wizard\x1b[0m');
   console.log('\x1b[2m─────────────────────────────────\x1b[0m\n');
 
+  // Check for references directory and remind user
+  const referencesDir = path.join(rootDir, '.ralph', 'references');
+  if (fs.existsSync(referencesDir)) {
+    const refFiles = fs.readdirSync(referencesDir).filter(f => f !== 'README.md' && !f.startsWith('.'));
+    if (refFiles.length > 0) {
+      console.log(`\x1b[36m📎 Reference files found (${refFiles.length}):\x1b[0m`);
+      refFiles.slice(0, 5).forEach(f => console.log(`   • ${f}`));
+      if (refFiles.length > 5) console.log(`   ... and ${refFiles.length - 5} more`);
+      console.log('\x1b[2m   These will be analyzed during spec generation.\x1b[0m\n');
+    } else {
+      console.log('\x1b[2m💡 Tip: Add reference files to .ralph/references/ before continuing\x1b[0m');
+      console.log('\x1b[2m   (existing implementations, sample data, documentation, etc.)\x1b[0m\n');
+    }
+  } else {
+    console.log('\x1b[2m💡 Tip: Create .ralph/references/ and add reference files\x1b[0m');
+    console.log('\x1b[2m   (existing implementations, sample data, documentation, etc.)\x1b[0m\n');
+  }
+
   // Check for existing spec_seed.md — offer to reuse
   if (fs.existsSync(seedPath)) {
     console.log('\x1b[33mFound existing spec_seed.md\x1b[0m');
@@ -621,7 +639,7 @@ async function interactivePrompt(preselectedMode = null) {
   // Full mode defaults to background since it can run for hours
   let background = false;
 
-  if (mode === 'debug' || mode === 'decompose' || mode === 'spec') {
+  if (mode === 'debug' || mode === 'decompose') {
     console.log(`\x1b[33m${mode.charAt(0).toUpperCase() + mode.slice(1)} mode always runs in foreground.\x1b[0m\n`);
     background = false;
   } else {
@@ -767,13 +785,18 @@ if (filteredArgs.length === 0) {
   // Debug mode never runs in background
   // Use --no-background or --foreground to override
   const noBackground = args.includes('--no-background') || args.includes('--foreground') || args.includes('-f');
-  const useBackground = (mode === 'debug' || mode === 'decompose' || mode === 'spec') ? false : (noBackground ? false : (background || mode === 'full'));
+  const useBackground = (mode === 'debug' || mode === 'decompose') ? false : (noBackground ? false : (background || mode === 'full'));
 
   // Spec mode: run gather wizard before launching Docker (async wrapper)
+  // The wizard is interactive, but the actual spec work can run in background
   if (mode === 'spec') {
     specGatherWizard(spec).then(() => {
-      setupWindowsSignalHandler();
-      runRalph(spec, mode, iterations, verbose);
+      if (useBackground) {
+        runRalphBackground(spec, mode, iterations, verbose);
+      } else {
+        setupWindowsSignalHandler();
+        runRalph(spec, mode, iterations, verbose);
+      }
     }).catch((err) => {
       console.error(err);
       process.exit(1);

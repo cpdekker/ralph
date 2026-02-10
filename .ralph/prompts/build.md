@@ -9,6 +9,8 @@
 1. Read `.ralph/specs/active.md` to understand the feature requirements
 2. Read `.ralph/implementation_plan.md` to see the task list
 3. Read `.ralph/AGENTS.md` for build commands and project conventions
+4. Read `.ralph/progress.txt` (if present) — context from prior iterations (decisions, blockers, learnings)
+5. Read `.ralph/guardrails.md` (if present) — anti-patterns and constraints. **Check these before implementing.**
 
 ---
 
@@ -46,7 +48,7 @@ Look at the complexity tags in the implementation plan:
 6. **Update `.ralph/implementation_plan.md`** — mark item(s) complete with `[x]`
 7. **Commit and push**:
    ```bash
-   git add <specific-files-you-changed>
+   git add <specific-files-you-changed> .ralph/progress.txt .ralph/guardrails.md
    git commit -m "descriptive message about what was implemented"
    git push
    ```
@@ -71,6 +73,7 @@ Look at the complexity tags in the implementation plan:
        - Possible causes: [your analysis]
        - Recommendation: [suggested approach for next iteration]
      ```
+   - Also add to `.ralph/guardrails.md` under "Anti-Patterns" if this is a pattern future iterations should avoid
    - Commit the note and STOP
    - The next iteration will have fresh context to approach differently
 
@@ -117,6 +120,8 @@ The loop will start a fresh turn for the next item.
 - **Spec inconsistencies**: If you find issues in `.ralph/specs/active.md`, document them in "Discovered Issues" in the implementation plan. Do NOT modify the spec.
 - **Tagging**: When there are no build/test errors, create a git tag (increment patch from last tag, or start at 0.0.1).
 - **Respect dependencies**: Don't start an item if its dependencies aren't complete.
+- **Update progress**: Before committing, append a brief entry to `.ralph/progress.txt` noting what you completed, any decisions made, and context for the next iteration.
+- **Respect guardrails**: Check `.ralph/guardrails.md` before implementing. If you discover a new anti-pattern or constraint, add it.
 
 ## Critical Rules
 

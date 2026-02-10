@@ -10,6 +10,7 @@ Dockerfile text eol=lf
 
 # Keep these as LF for consistency in Docker environment
 .ralph/scripts/*.sh text eol=lf
+.ralph/scripts/lib/*.sh text eol=lf
 .ralph/docker/entrypoint.sh text eol=lf
 
 # Node.js files can be auto-detected

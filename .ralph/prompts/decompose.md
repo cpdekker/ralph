@@ -8,6 +8,7 @@ You are decomposing a large feature spec into ordered sub-specs that can each be
 
 1. Read `.ralph/specs/active.md` — this is the master spec to decompose
 2. Read `.ralph/AGENTS.md` for project conventions
+3. Read `.ralph/guardrails.md` (if present) — architectural constraints that may affect decomposition boundaries
 
 ---
 
