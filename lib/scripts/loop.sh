@@ -722,28 +722,57 @@ capture_iteration_summary() {
 
     local log_file=$1
     local iteration_num=$2
-    local phase_name=$3
+    local phase_display=$3  # e.g. "BUILD (3/10)" or "review"
     local exit_code=$4
     local turn_start=$5
+    local start_sha=${6:-""}
 
     local now=$(date +%s)
     local duration=$((now - turn_start))
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-    # Reuse the same metric extraction patterns from generate_summary()
-    local files_changed=$(grep -o '"tool":"write"\|"tool":"str_replace_editor"\|"tool":"create"\|"tool":"edit"' "$log_file" 2>/dev/null | wc -l)
-    local commits=$(grep -o 'git commit' "$log_file" 2>/dev/null | wc -l)
-    local tests=$(grep -o 'npm test\|npm run test\|npx nx test\|jest\|vitest' "$log_file" 2>/dev/null | wc -l)
+    # Extract the phase name from the display string (e.g. "BUILD (3/10)" -> "BUILD", "REVIEW-QA (5/25)" -> "REVIEW-QA")
+    local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
 
-    # Get modified files and recent commits
-    local modified_files=$(git diff --name-only HEAD~1 2>/dev/null | head -10 | tr '\n' ',' | sed 's/,$//')
+    # Use git to get accurate metrics based on start SHA
+    local files_changed=0
+    local commits=0
+    local modified_files=""
+    if [ -n "$start_sha" ]; then
+        files_changed=$(git diff --name-only "$start_sha" HEAD 2>/dev/null | wc -l | tr -d ' ')
+        commits=$(git log --oneline "$start_sha"..HEAD 2>/dev/null | wc -l | tr -d ' ')
+        modified_files=$(git diff --name-only "$start_sha" HEAD 2>/dev/null | head -20 | tr '\n' ',' | sed 's/,$//')
+    else
+        # Fallback: estimate from recent commits
+        files_changed=$(git diff --name-only HEAD~1 2>/dev/null | wc -l | tr -d ' ')
+        commits=$(git log --oneline -1 2>/dev/null | wc -l | tr -d ' ')
+        modified_files=$(git diff --name-only HEAD~1 2>/dev/null | head -20 | tr '\n' ',' | sed 's/,$//')
+    fi
+
+    # Count test invocations from the log (best-effort — counts command runs, not individual tests)
+    local tests=$(grep -o 'npm test\|npm run test\|npx nx test\|jest\|vitest' "$log_file" 2>/dev/null | wc -l | tr -d ' ')
+
+    # Extract token usage and cost from the stream-json result line
+    local result_line=$(grep '"type":"result"' "$log_file" 2>/dev/null | tail -1)
+    local input_tokens=0
+    local output_tokens=0
+    local cost_usd=0
+    if [ -n "$result_line" ]; then
+        input_tokens=$(echo "$result_line" | sed -n 's/.*"input_tokens":\([0-9]*\).*/\1/p')
+        output_tokens=$(echo "$result_line" | sed -n 's/.*"output_tokens":\([0-9]*\).*/\1/p')
+        cost_usd=$(echo "$result_line" | sed -n 's/.*"total_cost_usd":\([0-9.]*\).*/\1/p')
+        input_tokens=${input_tokens:-0}
+        output_tokens=${output_tokens:-0}
+        cost_usd=${cost_usd:-0}
+    fi
+
+    # Recent commits (for human context)
     local recent_commits=$(git log --oneline -3 2>/dev/null | tr '\n' '|' | sed 's/|$//')
 
     # Extract error snippet if exit code was non-zero
     local error_snippet=""
     if [ "$exit_code" -ne 0 ]; then
         error_snippet=$(tail -5 "$log_file" 2>/dev/null | tr '\n' ' ' | head -c 200)
-        # Escape JSON special characters
         error_snippet=$(echo "$error_snippet" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g')
     fi
 
@@ -760,16 +789,21 @@ capture_iteration_summary() {
   "timestamp": "$timestamp",
   "spec_name": "$SPEC_NAME",
   "mode": "$MODE",
-  "phase": "$phase_name",
+  "phase_name": "$phase_name",
+  "phase": "$phase_display",
   "iteration": $iteration_num,
   "exit_code": $exit_code,
   "duration_seconds": $duration,
   "files_modified_count": $files_changed,
   "git_commits": $commits,
-  "tests_run": $tests,
+  "test_commands_run": $tests,
+  "input_tokens": $input_tokens,
+  "output_tokens": $output_tokens,
+  "cost_usd": $cost_usd,
   "modified_files": "$modified_files",
   "recent_commits": "$recent_commits",
   "error_snippet": "$error_snippet",
+  "start_sha": "$start_sha",
   "branch": "$branch"
 }
 INSIGHTS_EOF
@@ -930,8 +964,9 @@ run_single_iteration() {
     local prompt_file=$1
     local iteration_num=$2
     local phase_name=$3
-    
+
     TURN_START_TIME=$(date +%s)
+    TURN_START_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
     
     # Display turn banner
     print_turn_banner $iteration_num
@@ -988,7 +1023,7 @@ run_single_iteration() {
     generate_summary "$LOG_FILE" "$iteration_num" "$TURN_START_TIME"
 
     # Capture iteration summary for insights
-    capture_iteration_summary "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME"
+    capture_iteration_summary "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME" "$TURN_START_SHA"
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
@@ -2014,7 +2049,8 @@ fi
 while true; do
     ITERATION=$((ITERATION + 1))
     TURN_START_TIME=$(date +%s)
-    
+    TURN_START_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+
     if [ $MAX_ITERATIONS -gt 0 ] && [ $ITERATION -gt $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
         break
@@ -2178,7 +2214,7 @@ while true; do
     generate_summary "$LOG_FILE" "$ITERATION" "$TURN_START_TIME"
 
     # Capture iteration summary for insights
-    capture_iteration_summary "$LOG_FILE" "$ITERATION" "$MODE" "$CLAUDE_EXIT" "$TURN_START_TIME"
+    capture_iteration_summary "$LOG_FILE" "$ITERATION" "$MODE" "$CLAUDE_EXIT" "$TURN_START_TIME" "$TURN_START_SHA"
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
