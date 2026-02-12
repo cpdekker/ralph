@@ -18,6 +18,7 @@
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
 #   FULL_REVIEW_ITERS=25    # Review iterations per cycle (default: 25)
 #   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
+#   FULL_DISTILL_ITERS=1    # Distill iterations per cycle (default: 1)
 #
 # Parallel review settings (via environment variables):
 #   PARALLEL_REVIEW=true        # Enable parallel review specialists (default: true)
@@ -154,6 +155,7 @@ elif [ "$MODE" = "full" ]; then
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
+    FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}  # Distill iterations per cycle
 else
     MODE="build"
     PROMPT_FILE="$(resolve_prompt build.md)"
@@ -195,7 +197,7 @@ if [ "$MODE" = "spec" ]; then
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
 elif [ "$MODE" = "insights" ]; then
     echo "Action:  Analyze iteration logs"
@@ -234,7 +236,7 @@ elif [ "$MODE" = "insights" ]; then
     fi
 elif [ "$MODE" = "full" ]; then
     # Full mode uses multiple prompt files
-    for pf in "$(resolve_prompt plan.md)" "$(resolve_prompt build.md)" "$(resolve_prompt review/setup.md)" "$(resolve_prompt completion_check.md)"; do
+    for pf in "$(resolve_prompt plan.md)" "$(resolve_prompt build.md)" "$(resolve_prompt review/setup.md)" "$(resolve_prompt distill.md)" "$(resolve_prompt completion_check.md)"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for full mode)"
             exit 1
@@ -1460,7 +1462,7 @@ print_cycle_banner() {
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → check  ║\033[0m"
+    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check  ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 }
@@ -2345,6 +2347,37 @@ if [ "$MODE" = "full" ]; then
         else
             echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
         fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # DISTILL PHASE (update AGENTS.md with cycle learnings)
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "DISTILL" $FULL_DISTILL_ITERS
+
+        DISTILL_ITERATION=0
+        PHASE_ERROR=false
+        while [ $DISTILL_ITERATION -lt $FULL_DISTILL_ITERS ]; do
+            DISTILL_ITERATION=$((DISTILL_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "$(resolve_prompt distill.md)" $TOTAL_ITERATIONS "DISTILL ($DISTILL_ITERATION/$FULL_DISTILL_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
+            fi
+        done
+
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+
+        echo -e "  \033[1;32m✓\033[0m Distill phase complete"
+
+        run_insights_analysis "distill"
 
         # ─────────────────────────────────────────────────────────────────────
         # COMPLETION CHECK
