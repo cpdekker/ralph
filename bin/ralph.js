@@ -150,6 +150,18 @@ program
     await run(spec, 'insights', { ...opts, iterations: '1', verbose: true, insights: true, insightsGithub: !!opts.github });
   });
 
+// ralph parallel-full <spec> [-j N]
+program
+  .command('parallel-full [spec]')
+  .description('Run decomposed sub-specs in parallel containers')
+  .option('-j, --parallel <number>', 'max parallel sub-specs', '3')
+  .option('-n, --iterations <number>', 'max iterations per sub-spec', '100')
+  .option('-v, --verbose', 'verbose output')
+  .action(async (spec, opts) => {
+    const { run } = require('../lib/commands/parallel-full');
+    await run(spec, opts);
+  });
+
 // ralph run (interactive mode)
 program
   .command('run')

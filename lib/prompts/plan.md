@@ -29,6 +29,14 @@ Use subagents to analyze the codebase and create/update `.ralph/implementation_p
 - Research each user note with subagents to understand the context and formalize it into the plan
 - Add user notes to "Phase 0: User Review Fixes" in the implementation plan
 
+### Parallel Research Strategy
+
+Maximize parallelism when exploring the codebase:
+- Launch multiple Task sub-agents simultaneously, each searching a different area (e.g., one for models, one for controllers, one for tests)
+- Each sub-agent should return structured findings that you synthesize
+- For broad codebase scans, use up to 500 parallel Sonnet sub-agents
+- For deep analysis of specific areas, use Opus sub-agents
+
 ### Research Phase
 - Use up to 500 parallel Sonnet subagents to search existing source code
 - Compare current implementation against `.ralph/specs/active.md`

@@ -26,11 +26,14 @@ Look for items tagged with `[SEC]` or `[SEC-CRITICAL]` in `.ralph/review_checkli
 ## Execution (up to 5 items per turn)
 
 1. **Select up to 5 unchecked `[SEC]` or `[SEC-CRITICAL]` items** from `.ralph/review_checklist.md`
-2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
-   - Each subagent examines authentication, authorization, input handling
-   - Each subagent evaluates against security best practices (see checklist below)
-   - Each subagent identifies vulnerabilities and risks
-3. **Collect subagent findings** and synthesize the results
+2. **REQUIRED: Use the Task tool to review items in parallel** — you MUST launch one Task per item:
+   - Each Task receives the specific file paths and review criteria for one checklist item
+   - Each Task examines authentication, authorization, input handling independently
+   - Each Task evaluates against security best practices (see checklist below)
+   - Each Task returns its findings as structured text
+   - All Tasks run in parallel automatically when launched in the same response
+   - Single-threaded review of multiple items wastes time and is not acceptable
+3. **Synthesize all Task results** into your review findings
 4. **Update `.ralph/review_checklist.md`**:
    - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count
