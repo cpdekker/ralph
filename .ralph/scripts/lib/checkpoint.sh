@@ -141,7 +141,7 @@ append_guardrail() {
     sed -i "/^## $section$/a\\- [$now] $entry" "$guardrails_file"
 }
 
-# stage_ralph_memory() — Stages progress.txt and guardrails.md for git
+# stage_ralph_memory() — Stages cross-iteration memory files for git
 stage_ralph_memory() {
-    git add .ralph/progress.txt .ralph/guardrails.md 2>/dev/null || true
+    git add .ralph/progress.txt .ralph/guardrails.md .ralph/AGENTS.md 2>/dev/null || true
 }

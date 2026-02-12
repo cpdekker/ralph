@@ -26,11 +26,14 @@ Look for items tagged with `[PERF]` in `.ralph/review_checklist.md`.
 ## Execution (up to 5 items per turn)
 
 1. **Select up to 5 unchecked `[PERF]` items** from `.ralph/review_checklist.md`
-2. **Launch parallel Sonnet subagents** — one subagent per item to review in parallel:
-   - Each subagent examines algorithm complexity, data structures, I/O patterns
-   - Each subagent evaluates against performance best practices (see checklist below)
-   - Each subagent identifies bottlenecks and optimization opportunities
-3. **Collect subagent findings** and synthesize the results
+2. **REQUIRED: Use the Task tool to review items in parallel** — you MUST launch one Task per item:
+   - Each Task receives the specific file paths and review criteria for one checklist item
+   - Each Task examines algorithm complexity, data structures, I/O patterns independently
+   - Each Task evaluates against performance best practices (see checklist below)
+   - Each Task identifies bottlenecks and optimization opportunities
+   - All Tasks run in parallel automatically when launched in the same response
+   - Single-threaded review of multiple items wastes time and is not acceptable
+3. **Synthesize all Task results** into your review findings
 4. **Update `.ralph/review_checklist.md`**:
    - Mark each reviewed item complete with `[x]`
    - Update the "Reviewed" count

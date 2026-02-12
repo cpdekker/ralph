@@ -106,6 +106,15 @@ The loop will start a fresh turn for the next item.
 
 ---
 
+## Parallel Execution Strategy
+
+When implementing multiple independent changes, use the Task tool to delegate work in parallel:
+- Each sub-agent handles one file or logical unit of change
+- Sub-agents run in parallel automatically when launched in the same response
+- Sequence only when there are import/dependency relationships between changes
+- Run tests once after all parallel changes complete
+- For reading/searching: launch up to 500 parallel Sonnet sub-agents to scan the codebase simultaneously
+
 ## Guidelines
 
 - **Subagents**: Use up to 500 parallel Sonnet subagents for searching/reading. Use 1 subagent for builds/tests. Use Opus subagents for complex debugging or architectural decisions.

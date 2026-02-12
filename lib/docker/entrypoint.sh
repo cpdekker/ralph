@@ -61,5 +61,30 @@ if [ -n "$RALPH_REPO_URL" ]; then
     cd "$CLONE_DIR"
 fi
 
+# Sub-spec mode: copy the specified sub-spec to active.md
+if [ -n "$RALPH_SUBSPEC_NAME" ]; then
+    # Wait for the clone/checkout to complete and .ralph dir to exist
+    if [ -d ".ralph" ]; then
+        # Find the spec name from the command args (first non-flag arg after the script path)
+        SPEC_NAME_FROM_ARGS=""
+        for arg in "$@"; do
+            if [ "$arg" != "bash" ] && [[ "$arg" != /* ]] && [ "$arg" != "--verbose" ] && [ "$arg" != "-v" ] && [[ ! "$arg" =~ ^[0-9]+$ ]] && [ "$arg" != "full" ] && [ "$arg" != "plan" ] && [ "$arg" != "build" ] && [ "$arg" != "review" ]; then
+                SPEC_NAME_FROM_ARGS="$arg"
+                break
+            fi
+        done
+
+        if [ -n "$SPEC_NAME_FROM_ARGS" ]; then
+            SUBSPEC_FILE=".ralph/specs/${SPEC_NAME_FROM_ARGS}/${RALPH_SUBSPEC_NAME}.md"
+            if [ -f "$SUBSPEC_FILE" ]; then
+                echo "Sub-spec mode: copying $SUBSPEC_FILE to .ralph/specs/active.md"
+                cp "$SUBSPEC_FILE" ".ralph/specs/active.md"
+            else
+                echo "Warning: Sub-spec file not found: $SUBSPEC_FILE"
+            fi
+        fi
+    fi
+fi
+
 # Execute the command passed to docker run
 exec "$@"

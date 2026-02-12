@@ -20,6 +20,7 @@
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
 #   FULL_REVIEW_ITERS=5     # Review iterations per cycle (default: 5)
 #   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
+#   FULL_DISTILL_ITERS=1    # Distill iterations per cycle (default: 1)
 #
 # Circuit breaker settings (via environment variables):
 #   MAX_CONSECUTIVE_FAILURES=3  # Stop after N consecutive failures (default: 3)
@@ -131,6 +132,7 @@ elif [ "$MODE" = "full" ]; then
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-15}
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}
+    FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
@@ -177,7 +179,7 @@ if [ "$MODE" = "spec" ]; then
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
 elif [ "$MODE" = "debug" ]; then
     echo "⚠️  DEBUG MODE - No commits will be made"
@@ -207,7 +209,7 @@ if [ "$MODE" = "spec" ]; then
         exit 1
     fi
 elif [ "$MODE" = "full" ]; then
-    for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review/setup.md" "./.ralph/prompts/completion_check.md"; do
+    for pf in "./.ralph/prompts/plan.md" "./.ralph/prompts/build.md" "./.ralph/prompts/review/setup.md" "./.ralph/prompts/distill.md" "./.ralph/prompts/completion_check.md"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for full mode)"
             exit 1

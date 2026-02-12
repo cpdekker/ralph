@@ -18,6 +18,11 @@
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
 #   FULL_REVIEW_ITERS=25    # Review iterations per cycle (default: 25)
 #   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
+#   FULL_DISTILL_ITERS=1    # Distill iterations per cycle (default: 1)
+#
+# Parallel review settings (via environment variables):
+#   PARALLEL_REVIEW=true        # Enable parallel review specialists (default: true)
+#   PARALLEL_REVIEW_MAX=4       # Max concurrent Claude review processes (default: 4)
 #
 # Circuit breaker settings (via environment variables):
 #   MAX_CONSECUTIVE_FAILURES=3  # Stop after N consecutive failures (default: 3)
@@ -150,6 +155,7 @@ elif [ "$MODE" = "full" ]; then
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
+    FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}  # Distill iterations per cycle
 else
     MODE="build"
     PROMPT_FILE="$(resolve_prompt build.md)"
@@ -191,7 +197,7 @@ if [ "$MODE" = "spec" ]; then
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → review-fix($FULL_REVIEWFIX_ITERS) → check"
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
 elif [ "$MODE" = "insights" ]; then
     echo "Action:  Analyze iteration logs"
@@ -230,7 +236,7 @@ elif [ "$MODE" = "insights" ]; then
     fi
 elif [ "$MODE" = "full" ]; then
     # Full mode uses multiple prompt files
-    for pf in "$(resolve_prompt plan.md)" "$(resolve_prompt build.md)" "$(resolve_prompt review/setup.md)" "$(resolve_prompt completion_check.md)"; do
+    for pf in "$(resolve_prompt plan.md)" "$(resolve_prompt build.md)" "$(resolve_prompt review/setup.md)" "$(resolve_prompt distill.md)" "$(resolve_prompt completion_check.md)"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for full mode)"
             exit 1
@@ -1073,6 +1079,301 @@ get_next_review_specialist() {
     fi
 }
 
+# Helper function to get ALL remaining distinct specialist types
+# Returns space-separated list of specialist types with unchecked items
+get_all_remaining_specialists() {
+    local checklist_file="./.ralph/review_checklist.md"
+    local specialists=""
+
+    if [ ! -f "$checklist_file" ]; then
+        echo "qa"
+        return
+    fi
+
+    # Check each specialist type for unchecked items
+    if grep -q '^\- \[ \].*\[SEC' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists security"
+    fi
+    if grep -q '^\- \[ \].*\[UX\]' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists ux"
+    fi
+    if grep -q '^\- \[ \].*\[DB\]' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists db"
+    fi
+    if grep -q '^\- \[ \].*\[PERF\]' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists perf"
+    fi
+    if grep -q '^\- \[ \].*\[API\]' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists api"
+    fi
+    if grep -q '^\- \[ \].*\[ANTAG' "$checklist_file" 2>/dev/null; then
+        specialists="$specialists antagonist"
+    fi
+    # QA covers untagged items — check for unchecked items that don't match any known tag
+    local total_unchecked=$(grep -c '^\- \[ \]' "$checklist_file" 2>/dev/null) || total_unchecked=0
+    local tagged_unchecked=0
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[SEC' "$checklist_file" 2>/dev/null || echo 0)))
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[UX\]' "$checklist_file" 2>/dev/null || echo 0)))
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[DB\]' "$checklist_file" 2>/dev/null || echo 0)))
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[PERF\]' "$checklist_file" 2>/dev/null || echo 0)))
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[API\]' "$checklist_file" 2>/dev/null || echo 0)))
+    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[ANTAG' "$checklist_file" 2>/dev/null || echo 0)))
+    if [ $((total_unchecked - tagged_unchecked)) -gt 0 ]; then
+        specialists="$specialists qa"
+    fi
+
+    # Trim leading space
+    echo "$specialists" | sed 's/^ *//'
+}
+
+# Merge parallel review outputs back into main files
+merge_parallel_reviews() {
+    local parallel_dir="./.ralph/parallel_reviews"
+    local review_file="./.ralph/review.md"
+    local checklist_file="./.ralph/review_checklist.md"
+
+    if [ ! -d "$parallel_dir" ]; then
+        echo -e "  \033[1;33m⚠\033[0m  No parallel review output directory found"
+        return 1
+    fi
+
+    # Merge review findings: append each specialist's review to the main review.md
+    local merged_count=0
+    for review_output in "$parallel_dir"/review_*.md; do
+        [ -f "$review_output" ] || continue
+        local specialist_name=$(basename "$review_output" .md | sed 's/^review_//')
+        echo "" >> "$review_file"
+        echo "<!-- Parallel review: $specialist_name -->" >> "$review_file"
+        cat "$review_output" >> "$review_file"
+        merged_count=$((merged_count + 1))
+        echo -e "  \033[1;32m✓\033[0m Merged findings from $specialist_name"
+    done
+
+    # Merge checked items: match against checklist and mark complete
+    for checked_output in "$parallel_dir"/checked_*.md; do
+        [ -f "$checked_output" ] || continue
+        local specialist_name=$(basename "$checked_output" .md | sed 's/^checked_//')
+        local items_checked=0
+
+        while IFS= read -r line; do
+            # Skip empty lines
+            [ -z "$line" ] && continue
+            # Extract the item text after "- [x] " prefix
+            local item_text=$(echo "$line" | sed 's/^- \[x\] //')
+            [ -z "$item_text" ] && continue
+
+            # Escape special regex characters for sed matching
+            local escaped_text=$(echo "$item_text" | sed 's/[[\.*^$()+?{|\\]/\\&/g')
+
+            # Replace unchecked with checked in the checklist
+            if grep -qF "$item_text" "$checklist_file" 2>/dev/null; then
+                sed -i "s|^\- \[ \] ${escaped_text}|- [x] ${item_text}|" "$checklist_file" 2>/dev/null
+                items_checked=$((items_checked + 1))
+            fi
+        done < "$checked_output"
+
+        if [ $items_checked -gt 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m Marked $items_checked items complete from $specialist_name"
+        fi
+    done
+
+    # Clean up parallel reviews directory
+    rm -rf "$parallel_dir"
+
+    if [ $merged_count -eq 0 ]; then
+        echo -e "  \033[1;33m⚠\033[0m  No specialist outputs to merge"
+        return 1
+    fi
+
+    return 0
+}
+
+# Run review specialists in parallel
+# Returns 0 if any succeeded, 1 if all failed
+run_parallel_review() {
+    local parallel_max=${PARALLEL_REVIEW_MAX:-4}
+    local parallel_dir="./.ralph/parallel_reviews"
+    local wrapper_prompt="$(resolve_prompt review/parallel_wrapper.md)"
+
+    # Get all remaining specialist types
+    local specialists=$(get_all_remaining_specialists)
+
+    if [ -z "$specialists" ]; then
+        echo -e "  \033[1;32m✓\033[0m No remaining review items"
+        return 0
+    fi
+
+    echo ""
+    echo -e "\033[1;35m┌────────────────────────────────────────────────────────────┐\033[0m"
+    echo -e "\033[1;35m│  PARALLEL REVIEW - Launching specialists simultaneously   │\033[0m"
+    echo -e "\033[1;35m└────────────────────────────────────────────────────────────┘\033[0m"
+    echo ""
+
+    # Create output directory
+    mkdir -p "$parallel_dir"
+
+    # Build array of specialists (cap at parallel_max)
+    local spec_array=()
+    local count=0
+    for spec_type in $specialists; do
+        if [ $count -ge $parallel_max ]; then
+            echo -e "  \033[1;33m⚠\033[0m  Capping at $parallel_max parallel specialists (remaining: $(echo $specialists | wc -w))"
+            break
+        fi
+        spec_array+=("$spec_type")
+        count=$((count + 1))
+    done
+
+    # Launch each specialist in parallel
+    local pids=()
+    local specialist_names=()
+    local specialist_colors=()
+    local PARALLEL_START_TIME=$(date +%s)
+
+    for spec_type in "${spec_array[@]}"; do
+        local specialist_prompt=""
+        local specialist_color=""
+        local specialist_label=""
+
+        case $spec_type in
+            security)
+                specialist_prompt="$(resolve_prompt review/security.md)"
+                specialist_label="Security"
+                specialist_color="\033[1;31m"
+                ;;
+            ux)
+                specialist_prompt="$(resolve_prompt review/ux.md)"
+                specialist_label="UX"
+                specialist_color="\033[1;35m"
+                ;;
+            db)
+                specialist_prompt="$(resolve_prompt review/db.md)"
+                specialist_label="DB"
+                specialist_color="\033[1;36m"
+                ;;
+            perf)
+                specialist_prompt="$(resolve_prompt review/perf.md)"
+                specialist_label="Performance"
+                specialist_color="\033[1;32m"
+                ;;
+            api)
+                specialist_prompt="$(resolve_prompt review/api.md)"
+                specialist_label="API"
+                specialist_color="\033[1;34m"
+                ;;
+            antagonist)
+                specialist_prompt="$(resolve_prompt review/antagonist.md)"
+                specialist_label="Antagonist"
+                specialist_color="\033[0;91m"
+                ;;
+            *)
+                specialist_prompt="$(resolve_prompt review/qa.md)"
+                specialist_label="QA"
+                specialist_color="\033[1;33m"
+                ;;
+        esac
+
+        # Fallback to general review if specialist prompt doesn't exist
+        if [ ! -f "$specialist_prompt" ]; then
+            specialist_prompt="$(resolve_prompt review/general.md)"
+            specialist_label="General"
+            specialist_color="\033[1;37m"
+        fi
+
+        # Check if wrapper exists — fall back to sequential if not
+        if [ ! -f "$wrapper_prompt" ]; then
+            echo -e "  \033[1;33m⚠\033[0m  Parallel wrapper prompt not found, falling back to sequential"
+            return 2  # Signal caller to use sequential fallback
+        fi
+
+        # Create combined prompt: wrapper + specialist
+        local temp_prompt="$TEMP_DIR/parallel_${spec_type}.md"
+        # Replace SPECIALIST placeholder in wrapper with actual type name
+        sed "s/SPECIALIST/${spec_type}/g" "$wrapper_prompt" > "$temp_prompt"
+        cat "$specialist_prompt" >> "$temp_prompt"
+
+        local log_file="$TEMP_DIR/parallel_${spec_type}.log"
+
+        echo -e "  ${specialist_color}🚀 Launching: $specialist_label\033[0m"
+
+        # Launch claude in background
+        cat "$temp_prompt" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$log_file" 2>&1 &
+
+        pids+=($!)
+        specialist_names+=("$specialist_label")
+        specialist_colors+=("$specialist_color")
+    done
+
+    echo ""
+    echo -e "  \033[1;36m⏳\033[0m Waiting for ${#pids[@]} specialists to complete..."
+    echo ""
+
+    # Wait for all processes with a multi-spinner display
+    local all_done=false
+    while ! $all_done; do
+        all_done=true
+        local status_line="  "
+        for i in "${!pids[@]}"; do
+            if ps -p ${pids[$i]} > /dev/null 2>&1; then
+                all_done=false
+                status_line="${status_line}${specialist_colors[$i]}⟳ ${specialist_names[$i]}\033[0m  "
+            else
+                status_line="${status_line}\033[1;32m✓ ${specialist_names[$i]}\033[0m  "
+            fi
+        done
+        printf "\r${status_line}"
+        if ! $all_done; then
+            sleep 1
+        fi
+    done
+    printf "\r                                                                              \r"
+
+    # Collect exit codes
+    local success_count=0
+    local fail_count=0
+    for i in "${!pids[@]}"; do
+        wait ${pids[$i]}
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m ${specialist_names[$i]} completed successfully"
+            success_count=$((success_count + 1))
+        else
+            echo -e "  \033[1;31m✗\033[0m ${specialist_names[$i]} failed (exit code $exit_code)"
+            echo "    Log: $TEMP_DIR/parallel_${spec_array[$i]}.log"
+            fail_count=$((fail_count + 1))
+        fi
+    done
+
+    local PARALLEL_END_TIME=$(date +%s)
+    local parallel_duration=$((PARALLEL_END_TIME - PARALLEL_START_TIME))
+    echo ""
+    echo -e "  \033[1;35m⏱\033[0m  Parallel review took $(format_duration $parallel_duration)"
+    echo ""
+
+    # Merge results
+    if [ $success_count -gt 0 ]; then
+        echo -e "  \033[1;36m📋 Merging results from $success_count specialists...\033[0m"
+        merge_parallel_reviews
+
+        # Single git commit + push for all merged results
+        git add .ralph/review.md .ralph/review_checklist.md
+        git commit -m "Parallel Review: $success_count specialists completed ($(echo ${specialist_names[@]} | tr ' ' ', '))"
+        git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
+
+        echo -e "  \033[1;32m✓\033[0m Parallel review round complete ($success_count succeeded, $fail_count failed)"
+        CONSECUTIVE_FAILURES=0
+        return 0
+    else
+        echo -e "  \033[1;31m✗\033[0m All $fail_count specialists failed"
+        CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+        ERROR_COUNT=$((ERROR_COUNT + 1))
+        return 1
+    fi
+}
+
 # Helper function to run completion check
 run_completion_check() {
     echo ""
@@ -1161,7 +1462,7 @@ print_cycle_banner() {
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → check  ║\033[0m"
+    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check  ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 }
@@ -1847,87 +2148,133 @@ if [ "$MODE" = "full" ]; then
         
         REVIEW_ITERATION=0
         PHASE_ERROR=false
-        while [ $REVIEW_ITERATION -lt $FULL_REVIEW_ITERS ]; do
-            REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
-            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
-            
-            # Check if review is complete before running
-            CHECKLIST_FILE="./.ralph/review_checklist.md"
-            if [ -f "$CHECKLIST_FILE" ]; then
-                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
-                if [ "$UNCHECKED_COUNT" -eq 0 ]; then
-                    echo -e "  \033[1;32m✓\033[0m All review items complete!"
-                    break
+
+        if [ "${PARALLEL_REVIEW:-true}" = "true" ]; then
+            # ── PARALLEL REVIEW MODE ──
+            # Run all specialist types simultaneously, then iterate for remaining items
+            while [ $REVIEW_ITERATION -lt $FULL_REVIEW_ITERS ]; do
+                REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                # Check if review is complete before running
+                CHECKLIST_FILE="./.ralph/review_checklist.md"
+                if [ -f "$CHECKLIST_FILE" ]; then
+                    UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
+                    if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                        echo -e "  \033[1;32m✓\033[0m All review items complete!"
+                        break
+                    fi
+
+                    # Count items by specialist type
+                    SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
+                    UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
+                    DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
+                    PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
+                    API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
+                    ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null) || ANTAG_COUNT=0
+                    QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
+                    echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
                 fi
 
-                # Count items by specialist type
-                SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
-                UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
-                DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
-                PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
-                API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
-                ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null) || ANTAG_COUNT=0
-                QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
-                echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
-            fi
-            
-            # Determine which specialist should handle the next item
-            SPECIALIST=$(get_next_review_specialist)
-            case $SPECIALIST in
-                security)
-                    REVIEW_PROMPT="$(resolve_prompt review/security.md)"
-                    SPECIALIST_NAME="Security"
-                    SPECIALIST_COLOR="\033[1;31m"  # Red
-                    ;;
-                ux)
-                    REVIEW_PROMPT="$(resolve_prompt review/ux.md)"
-                    SPECIALIST_NAME="UX"
-                    SPECIALIST_COLOR="\033[1;35m"  # Magenta
-                    ;;
-                db)
-                    REVIEW_PROMPT="$(resolve_prompt review/db.md)"
-                    SPECIALIST_NAME="DB"
-                    SPECIALIST_COLOR="\033[1;36m"  # Cyan
-                    ;;
-                perf)
-                    REVIEW_PROMPT="$(resolve_prompt review/perf.md)"
-                    SPECIALIST_NAME="Performance"
-                    SPECIALIST_COLOR="\033[1;32m"  # Green
-                    ;;
-                api)
-                    REVIEW_PROMPT="$(resolve_prompt review/api.md)"
-                    SPECIALIST_NAME="API"
-                    SPECIALIST_COLOR="\033[1;34m"  # Blue
-                    ;;
-                antagonist)
-                    REVIEW_PROMPT="$(resolve_prompt review/antagonist.md)"
-                    SPECIALIST_NAME="Antagonist"
-                    SPECIALIST_COLOR="\033[0;91m"  # Bright red
-                    ;;
-                *)
-                    REVIEW_PROMPT="$(resolve_prompt review/qa.md)"
-                    SPECIALIST_NAME="QA"
-                    SPECIALIST_COLOR="\033[1;33m"  # Yellow
-                    ;;
-            esac
+                run_parallel_review
+                local parallel_exit=$?
 
-            # Fallback to generic review.md if specialist prompt doesn't exist
-            if [ ! -f "$REVIEW_PROMPT" ]; then
-                REVIEW_PROMPT="$(resolve_prompt review/general.md)"
-                SPECIALIST_NAME="General"
-                SPECIALIST_COLOR="\033[1;37m"
-            fi
-
-            echo -e "  ${SPECIALIST_COLOR}🔍 Specialist: $SPECIALIST_NAME\033[0m"
-
-            if ! run_single_iteration "$REVIEW_PROMPT" $TOTAL_ITERATIONS "REVIEW-$SPECIALIST_NAME ($REVIEW_ITERATION/$FULL_REVIEW_ITERS)"; then
-                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
-                if check_circuit_breaker; then
-                    PHASE_ERROR=true
+                if [ $parallel_exit -eq 2 ]; then
+                    # Wrapper not found — fall back to sequential for rest of this cycle
+                    echo -e "  \033[1;33m⚠\033[0m  Falling back to sequential review"
                     break
+                elif [ $parallel_exit -ne 0 ]; then
+                    echo -e "  \033[1;31m✗\033[0m Parallel review failed - checking circuit breaker"
+                    if check_circuit_breaker; then
+                        PHASE_ERROR=true
+                        break
+                    fi
                 fi
-            fi
-        done
+            done
+        else
+            # ── SEQUENTIAL REVIEW MODE (fallback) ──
+            while [ $REVIEW_ITERATION -lt $FULL_REVIEW_ITERS ]; do
+                REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                # Check if review is complete before running
+                CHECKLIST_FILE="./.ralph/review_checklist.md"
+                if [ -f "$CHECKLIST_FILE" ]; then
+                    UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
+                    if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                        echo -e "  \033[1;32m✓\033[0m All review items complete!"
+                        break
+                    fi
+
+                    # Count items by specialist type
+                    SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
+                    UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
+                    DB_COUNT=$(grep -c '^\- \[ \].*\[DB\]' "$CHECKLIST_FILE" 2>/dev/null) || DB_COUNT=0
+                    PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
+                    API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
+                    ANTAG_COUNT=$(grep -c '^\- \[ \].*\[ANTAG' "$CHECKLIST_FILE" 2>/dev/null) || ANTAG_COUNT=0
+                    QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
+                    echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+                fi
+
+                # Determine which specialist should handle the next item
+                SPECIALIST=$(get_next_review_specialist)
+                case $SPECIALIST in
+                    security)
+                        REVIEW_PROMPT="$(resolve_prompt review/security.md)"
+                        SPECIALIST_NAME="Security"
+                        SPECIALIST_COLOR="\033[1;31m"  # Red
+                        ;;
+                    ux)
+                        REVIEW_PROMPT="$(resolve_prompt review/ux.md)"
+                        SPECIALIST_NAME="UX"
+                        SPECIALIST_COLOR="\033[1;35m"  # Magenta
+                        ;;
+                    db)
+                        REVIEW_PROMPT="$(resolve_prompt review/db.md)"
+                        SPECIALIST_NAME="DB"
+                        SPECIALIST_COLOR="\033[1;36m"  # Cyan
+                        ;;
+                    perf)
+                        REVIEW_PROMPT="$(resolve_prompt review/perf.md)"
+                        SPECIALIST_NAME="Performance"
+                        SPECIALIST_COLOR="\033[1;32m"  # Green
+                        ;;
+                    api)
+                        REVIEW_PROMPT="$(resolve_prompt review/api.md)"
+                        SPECIALIST_NAME="API"
+                        SPECIALIST_COLOR="\033[1;34m"  # Blue
+                        ;;
+                    antagonist)
+                        REVIEW_PROMPT="$(resolve_prompt review/antagonist.md)"
+                        SPECIALIST_NAME="Antagonist"
+                        SPECIALIST_COLOR="\033[0;91m"  # Bright red
+                        ;;
+                    *)
+                        REVIEW_PROMPT="$(resolve_prompt review/qa.md)"
+                        SPECIALIST_NAME="QA"
+                        SPECIALIST_COLOR="\033[1;33m"  # Yellow
+                        ;;
+                esac
+
+                # Fallback to generic review.md if specialist prompt doesn't exist
+                if [ ! -f "$REVIEW_PROMPT" ]; then
+                    REVIEW_PROMPT="$(resolve_prompt review/general.md)"
+                    SPECIALIST_NAME="General"
+                    SPECIALIST_COLOR="\033[1;37m"
+                fi
+
+                echo -e "  ${SPECIALIST_COLOR}🔍 Specialist: $SPECIALIST_NAME\033[0m"
+
+                if ! run_single_iteration "$REVIEW_PROMPT" $TOTAL_ITERATIONS "REVIEW-$SPECIALIST_NAME ($REVIEW_ITERATION/$FULL_REVIEW_ITERS)"; then
+                    echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                    if check_circuit_breaker; then
+                        PHASE_ERROR=true
+                        break
+                    fi
+                fi
+            done
+        fi
         
         # Exit full mode on error
         if [ "$PHASE_ERROR" = true ]; then
@@ -2002,9 +2349,44 @@ if [ "$MODE" = "full" ]; then
         fi
 
         # ─────────────────────────────────────────────────────────────────────
+        # DISTILL PHASE (update AGENTS.md with cycle learnings)
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "DISTILL" $FULL_DISTILL_ITERS
+
+        DISTILL_ITERATION=0
+        PHASE_ERROR=false
+        while [ $DISTILL_ITERATION -lt $FULL_DISTILL_ITERS ]; do
+            DISTILL_ITERATION=$((DISTILL_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "$(resolve_prompt distill.md)" $TOTAL_ITERATIONS "DISTILL ($DISTILL_ITERATION/$FULL_DISTILL_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
+            fi
+        done
+
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+
+        echo -e "  \033[1;32m✓\033[0m Distill phase complete"
+
+        run_insights_analysis "distill"
+
+        # ─────────────────────────────────────────────────────────────────────
         # COMPLETION CHECK
         # ─────────────────────────────────────────────────────────────────────
         if run_completion_check; then
+            # Write completion marker for parallel orchestrator detection
+            local completion_marker="./.ralph/sub_spec_complete.json"
+            echo "{\"complete\": true, \"spec\": \"${SPEC_NAME}\", \"subspec\": \"${RALPH_SUBSPEC_NAME:-none}\", \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$completion_marker"
+
             if [ "$IS_DECOMPOSED" = true ]; then
                 # Mark current sub-spec as complete and loop to select next
                 mark_subspec_complete
@@ -2099,6 +2481,22 @@ while true; do
             QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT - ANTAG_COUNT))
             echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[0;91mANTAG:$ANTAG_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
 
+            if [ "${PARALLEL_REVIEW:-true}" = "true" ]; then
+                # Parallel review mode — run all specialists simultaneously
+                run_parallel_review
+                local parallel_exit=$?
+                if [ $parallel_exit -eq 2 ]; then
+                    # Wrapper not found — fall through to sequential
+                    :
+                elif [ $parallel_exit -eq 0 ]; then
+                    continue  # Skip sequential, loop back to check remaining
+                else
+                    # Failed — circuit breaker checked inside run_parallel_review
+                    continue
+                fi
+            fi
+
+            # Sequential fallback (or PARALLEL_REVIEW=false)
             # Determine which specialist should handle the next item
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in

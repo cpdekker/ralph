@@ -332,6 +332,35 @@ run_full_mode() {
         fi
 
         # ─────────────────────────────────────────────────────────────────────
+        # DISTILL PHASE (update AGENTS.md with cycle learnings)
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "DISTILL" $FULL_DISTILL_ITERS
+
+        DISTILL_ITERATION=0
+        PHASE_ERROR=false
+        while [ $DISTILL_ITERATION -lt $FULL_DISTILL_ITERS ]; do
+            DISTILL_ITERATION=$((DISTILL_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "./.ralph/prompts/distill.md" $TOTAL_ITERATIONS "DISTILL ($DISTILL_ITERATION/$FULL_DISTILL_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
+                if check_circuit_breaker; then
+                    PHASE_ERROR=true
+                    break
+                fi
+            fi
+        done
+
+        if [ "$PHASE_ERROR" = true ]; then
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
+            echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+            break
+        fi
+
+        echo -e "  \033[1;32m✓\033[0m Distill phase complete"
+
+        # ─────────────────────────────────────────────────────────────────────
         # COMPLETION CHECK
         # ─────────────────────────────────────────────────────────────────────
         if run_completion_check; then

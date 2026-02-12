@@ -270,7 +270,7 @@ print_cycle_banner() {
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → check  ║\033[0m"
+    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check  ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 }
