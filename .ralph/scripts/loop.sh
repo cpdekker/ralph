@@ -171,27 +171,27 @@ fi
 # STARTUP DISPLAY
 # ═══════════════════════════════════════════════════════════════════════════════
 
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "Spec:    $SPEC_NAME"
-echo "Mode:    $MODE"
+ralph_header "Ralph Session"
+echo -e "${C_MUTED}  spec${C_RESET}      $SPEC_NAME"
+echo -e "${C_MUTED}  mode${C_RESET}      $MODE"
 if [ "$MODE" = "spec" ]; then
-    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    echo -e "${C_MUTED}  phases${C_RESET}    research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
 elif [ "$MODE" = "decompose" ]; then
-    echo "Action:  Decompose spec into sub-specs"
+    echo -e "${C_MUTED}  action${C_RESET}    Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
-    [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
+    echo -e "${C_MUTED}  cycle${C_RESET}     plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
+    [ $MAX_ITERATIONS -gt 0 ] && echo -e "${C_MUTED}  max${C_RESET}       $MAX_ITERATIONS cycles"
 elif [ "$MODE" = "debug" ]; then
-    echo "⚠️  DEBUG MODE - No commits will be made"
+    ralph_warn "DEBUG MODE - No commits will be made"
 else
-    [ -n "$SETUP_PROMPT_FILE" ] && echo "Setup:   $SETUP_PROMPT_FILE"
-    echo "Prompt:  $PROMPT_FILE"
-    [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS iterations"
+    [ -n "$SETUP_PROMPT_FILE" ] && echo -e "${C_MUTED}  setup${C_RESET}     $SETUP_PROMPT_FILE"
+    echo -e "${C_MUTED}  prompt${C_RESET}    $PROMPT_FILE"
+    [ $MAX_ITERATIONS -gt 0 ] && echo -e "${C_MUTED}  max${C_RESET}       $MAX_ITERATIONS iterations"
 fi
-echo "Branch:  $CURRENT_BRANCH"
-echo "Verbose: $VERBOSE"
-echo "Circuit Breaker: $MAX_CONSECUTIVE_FAILURES consecutive failures"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo -e "${C_MUTED}  branch${C_RESET}    $CURRENT_BRANCH"
+echo -e "${C_MUTED}  verbose${C_RESET}   $VERBOSE"
+echo -e "${C_MUTED}  breaker${C_RESET}   $MAX_CONSECUTIVE_FAILURES consecutive failures"
+ralph_separator
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # PROMPT FILE VALIDATION
@@ -227,15 +227,14 @@ elif [ "$MODE" = "full" ]; then
         echo "Error: No review prompt found (need review/qa.md or review/general.md)"
         exit 1
     fi
-    echo ""
-    echo "Review specialists available:"
-    [ -f "./.ralph/prompts/review/ux.md" ] && echo -e "  \033[1;35m✓\033[0m UX Expert (review/ux.md)"
-    [ -f "./.ralph/prompts/review/db.md" ] && echo -e "  \033[1;36m✓\033[0m DB Expert (review/db.md)"
-    [ -f "./.ralph/prompts/review/qa.md" ] && echo -e "  \033[1;33m✓\033[0m QA Expert (review/qa.md)"
-    [ -f "./.ralph/prompts/review/security.md" ] && echo -e "  \033[1;31m✓\033[0m Security Expert (review/security.md)"
-    [ -f "./.ralph/prompts/review/perf.md" ] && echo -e "  \033[1;32m✓\033[0m Performance Expert (review/perf.md)"
-    [ -f "./.ralph/prompts/review/api.md" ] && echo -e "  \033[1;34m✓\033[0m API Expert (review/api.md)"
-    [ -f "./.ralph/prompts/review/general.md" ] && echo -e "  \033[1;37m✓\033[0m General (review/general.md - fallback)"
+    ralph_header "Review Specialists"
+    [ -f "./.ralph/prompts/review/ux.md" ] && echo -e "  ${C_UX}✓${C_RESET} UX Expert (review/ux.md)"
+    [ -f "./.ralph/prompts/review/db.md" ] && echo -e "  ${C_DB}✓${C_RESET} DB Expert (review/db.md)"
+    [ -f "./.ralph/prompts/review/qa.md" ] && echo -e "  ${C_QA}✓${C_RESET} QA Expert (review/qa.md)"
+    [ -f "./.ralph/prompts/review/security.md" ] && echo -e "  ${C_SEC}✓${C_RESET} Security Expert (review/security.md)"
+    [ -f "./.ralph/prompts/review/perf.md" ] && echo -e "  ${C_PERF}✓${C_RESET} Performance Expert (review/perf.md)"
+    [ -f "./.ralph/prompts/review/api.md" ] && echo -e "  ${C_API}✓${C_RESET} API Expert (review/api.md)"
+    [ -f "./.ralph/prompts/review/general.md" ] && echo -e "  ${C_HIGHLIGHT}✓${C_RESET} General (review/general.md - fallback)"
     echo ""
 else
     if [ ! -f "$PROMPT_FILE" ]; then
@@ -254,12 +253,12 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 
 echo ""
-echo "Verifying Claude CLI authentication..."
+ralph_info "Verifying Claude CLI authentication..."
 if ! claude -p --output-format json <<< "Reply with only the word 'ok'" > /dev/null 2>&1; then
     echo ""
-    echo -e "\033[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;31m  ERROR: Claude CLI authentication failed\033[0m"
-    echo -e "\033[1;31m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "${C_ERROR}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_ERROR}  ERROR: Claude CLI authentication failed${C_RESET}"
+    echo -e "${C_ERROR}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
     echo ""
     echo "  Possible causes:"
     echo "    • API credentials are missing, invalid, or expired"
@@ -270,7 +269,7 @@ if ! claude -p --output-format json <<< "Reply with only the word 'ok'" > /dev/n
     echo ""
     exit 1
 fi
-echo -e "\033[1;32m✓ Claude CLI authenticated successfully\033[0m"
+ralph_success "Claude CLI authenticated successfully"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -291,17 +290,13 @@ init_guardrails
 
 # Check for existing checkpoint
 if load_state; then
-    echo -e "\033[1;36mℹ️  Previous session state found. Continuing from checkpoint.\033[0m"
+    echo -e "${C_PRIMARY}ℹ️  Previous session state found. Continuing from checkpoint.${C_RESET}"
     echo ""
 fi
 
 # Run setup prompt if defined (for review mode)
 if [ -n "$SETUP_PROMPT_FILE" ]; then
-    echo ""
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;35m  SETUP PHASE: Running $SETUP_PROMPT_FILE\033[0m"
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo ""
+    ralph_header "Setup Phase"
 
     SETUP_LOG_FILE="$TEMP_DIR/setup.log"
 
@@ -311,25 +306,22 @@ if [ -n "$SETUP_PROMPT_FILE" ]; then
             --output-format=stream-json \
             --verbose 2>&1 | tee "$SETUP_LOG_FILE"
     else
-        echo -e "  \033[1;36m⏳\033[0m Running setup phase..."
-        echo ""
-
         cat "$SETUP_PROMPT_FILE" | claude -p \
             --dangerously-skip-permissions \
             --output-format=stream-json \
             --verbose > "$SETUP_LOG_FILE" 2>&1 &
 
         SETUP_PID=$!
-        spin $SETUP_PID
+        spin $SETUP_PID "Running setup phase..."
         wait $SETUP_PID
         SETUP_EXIT=$?
 
         if [ $SETUP_EXIT -ne 0 ]; then
-            echo -e "  \033[1;31m✗\033[0m Setup phase failed with code $SETUP_EXIT"
+            ralph_error "Setup phase failed with code $SETUP_EXIT"
             echo "  Check log: $SETUP_LOG_FILE"
             exit 1
         else
-            echo -e "  \033[1;32m✓\033[0m Setup phase completed"
+            ralph_success "Setup phase completed"
         fi
     fi
 
@@ -340,11 +332,7 @@ if [ -n "$SETUP_PROMPT_FILE" ]; then
         git push -u origin "$CURRENT_BRANCH"
     }
 
-    echo ""
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;35m  SETUP COMPLETE - Starting review loop\033[0m"
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo ""
+    ralph_header "Setup Complete — Starting Review Loop"
 fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -386,13 +374,13 @@ while true; do
             UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-                echo -e "\033[1;32m  ✅ All tasks complete! No unchecked items remaining.\033[0m"
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                echo -e "${C_SUCCESS}  All tasks complete! No unchecked items remaining.${C_RESET}"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
                 echo ""
                 break
             fi
-            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT unchecked items remaining"
+            ralph_info "$UNCHECKED_COUNT unchecked items remaining"
         fi
     elif [ "$MODE" = "review" ]; then
         CHECKLIST_FILE="./.ralph/review_checklist.md"
@@ -400,9 +388,9 @@ while true; do
             UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$CHECKLIST_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
             if [ "$UNCHECKED_COUNT" -eq 0 ]; then
                 echo ""
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-                echo -e "\033[1;32m  ✅ Review complete! All items have been reviewed.\033[0m"
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                echo -e "${C_SUCCESS}  Review complete! All items have been reviewed.${C_RESET}"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
                 echo ""
                 break
             fi
@@ -414,44 +402,44 @@ while true; do
             PERF_COUNT=$(grep -c '^\- \[ \].*\[PERF\]' "$CHECKLIST_FILE" 2>/dev/null) || PERF_COUNT=0
             API_COUNT=$(grep -c '^\- \[ \].*\[API\]' "$CHECKLIST_FILE" 2>/dev/null) || API_COUNT=0
             QA_COUNT=$((UNCHECKED_COUNT - SEC_COUNT - UX_COUNT - DB_COUNT - PERF_COUNT - API_COUNT))
-            echo -e "  \033[1;34mℹ\033[0m  $UNCHECKED_COUNT items remaining: \033[1;31mSEC:$SEC_COUNT\033[0m \033[1;35mUX:$UX_COUNT\033[0m \033[1;36mDB:$DB_COUNT\033[0m \033[1;32mPERF:$PERF_COUNT\033[0m \033[1;34mAPI:$API_COUNT\033[0m \033[1;33mQA:$QA_COUNT\033[0m"
+            echo -e "  ${C_API}ℹ${C_RESET}  $UNCHECKED_COUNT items remaining: ${C_SEC}SEC:$SEC_COUNT${C_RESET} ${C_UX}UX:$UX_COUNT${C_RESET} ${C_DB}DB:$DB_COUNT${C_RESET} ${C_PERF}PERF:$PERF_COUNT${C_RESET} ${C_API}API:$API_COUNT${C_RESET} ${C_QA}QA:$QA_COUNT${C_RESET}"
 
             # Determine which specialist should handle the next item
             SPECIALIST=$(get_next_review_specialist)
             case $SPECIALIST in
                 security)
                     PROMPT_FILE="./.ralph/prompts/review/security.md"
-                    echo -e "  \033[1;31m🔍 Specialist: Security Expert\033[0m"
+                    echo -e "  ${C_SEC}🔍 Specialist: Security Expert${C_RESET}"
                     ;;
                 ux)
                     PROMPT_FILE="./.ralph/prompts/review/ux.md"
-                    echo -e "  \033[1;35m🔍 Specialist: UX Expert\033[0m"
+                    echo -e "  ${C_UX}🔍 Specialist: UX Expert${C_RESET}"
                     ;;
                 db)
                     PROMPT_FILE="./.ralph/prompts/review/db.md"
-                    echo -e "  \033[1;36m🔍 Specialist: DB Expert\033[0m"
+                    echo -e "  ${C_DB}🔍 Specialist: DB Expert${C_RESET}"
                     ;;
                 perf)
                     PROMPT_FILE="./.ralph/prompts/review/perf.md"
-                    echo -e "  \033[1;32m🔍 Specialist: Performance Expert\033[0m"
+                    echo -e "  ${C_PERF}🔍 Specialist: Performance Expert${C_RESET}"
                     ;;
                 api)
                     PROMPT_FILE="./.ralph/prompts/review/api.md"
-                    echo -e "  \033[1;34m🔍 Specialist: API Expert\033[0m"
+                    echo -e "  ${C_API}🔍 Specialist: API Expert${C_RESET}"
                     ;;
                 *)
                     PROMPT_FILE="./.ralph/prompts/review/qa.md"
-                    echo -e "  \033[1;33m🔍 Specialist: QA Expert\033[0m"
+                    echo -e "  ${C_QA}🔍 Specialist: QA Expert${C_RESET}"
                     ;;
             esac
 
             # Fallback to generic review.md if specialist prompt doesn't exist
             if [ ! -f "$PROMPT_FILE" ]; then
                 PROMPT_FILE="./.ralph/prompts/review/general.md"
-                echo -e "  \033[1;37m🔍 Specialist: General\033[0m"
+                echo -e "  ${C_HIGHLIGHT}🔍 Specialist: General${C_RESET}"
             fi
         else
-            echo -e "  \033[1;31m✗\033[0m  Review checklist not found. Run setup first."
+            ralph_error "Review checklist not found. Run setup first."
             break
         fi
     elif [ "$MODE" = "review-fix" ]; then
@@ -461,15 +449,15 @@ while true; do
             ATTENTION_COUNT=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$REVIEW_FILE" 2>/dev/null) || ATTENTION_COUNT=0
             if [ "$BLOCKING_COUNT" -eq 0 ] && [ "$ATTENTION_COUNT" -eq 0 ]; then
                 echo ""
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-                echo -e "\033[1;32m  ✅ All review issues resolved!\033[0m"
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                echo -e "${C_SUCCESS}  All review issues resolved!${C_RESET}"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
                 echo ""
                 break
             fi
-            echo -e "  \033[1;34mℹ\033[0m  Issues remaining: \033[1;31m❌ Blocking: $BLOCKING_COUNT\033[0m  \033[1;33m⚠️ Attention: $ATTENTION_COUNT\033[0m"
+            echo -e "  ${C_API}ℹ${C_RESET}  Issues remaining: ${C_ERROR}❌ Blocking: $BLOCKING_COUNT${C_RESET}  ${C_WARNING}⚠️ Attention: $ATTENTION_COUNT${C_RESET}"
         else
-            echo -e "  \033[1;31m✗\033[0m  Review file not found. Run review mode first."
+            ralph_error "Review file not found. Run review mode first."
             break
         fi
     fi
@@ -491,28 +479,25 @@ while true; do
             --verbose 2>&1 | tee "$LOG_FILE"
         CLAUDE_EXIT=${PIPESTATUS[1]}
     else
-        echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $ITERATION..."
-        echo ""
-
         cat "$PROMPT_FILE" | claude -p \
             --dangerously-skip-permissions \
             --output-format=stream-json \
             --verbose > "$LOG_FILE" 2>&1 &
 
         CLAUDE_PID=$!
-        spin $CLAUDE_PID
+        spin $CLAUDE_PID "Running Claude iteration $ITERATION..."
         wait $CLAUDE_PID
         CLAUDE_EXIT=$?
     fi
 
     if [ $CLAUDE_EXIT -ne 0 ]; then
-        echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+        ralph_error "Claude exited with code $CLAUDE_EXIT"
         echo "  Check log: $LOG_FILE"
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         ERROR_COUNT=$((ERROR_COUNT + 1))
         append_progress "iteration_failure" "phase=$MODE iter=$ITERATION exit_code=$CLAUDE_EXIT"
     else
-        echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+        ralph_success "Claude iteration completed"
         CONSECUTIVE_FAILURES=0  # Reset on success
         append_progress "iteration_success" "phase=$MODE iter=$ITERATION"
     fi
@@ -522,7 +507,7 @@ while true; do
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
-        echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
+        ralph_warn "DEBUG MODE - Skipping commit and push"
         break
     fi
 
@@ -553,8 +538,8 @@ append_progress "session_end" "result=complete iters=$COMPLETED_ITERATIONS error
 stage_ralph_memory
 
 echo ""
-echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-echo -e "\033[1;32m  Ralph completed $COMPLETED_ITERATIONS iteration(s) in $FINAL_FORMATTED\033[0m"
-echo -e "\033[1;32m  Errors: $ERROR_COUNT\033[0m"
-echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+echo -e "${C_SUCCESS}  Ralph completed $COMPLETED_ITERATIONS iteration(s) in $FINAL_FORMATTED${C_RESET}"
+echo -e "${C_SUCCESS}  Errors: $ERROR_COUNT${C_RESET}"
+echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
 echo ""

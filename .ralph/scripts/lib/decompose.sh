@@ -17,9 +17,9 @@ check_manifest_exists() {
 # Returns: 0=selected, 1=all_complete, 2=blocked
 run_spec_select() {
     echo ""
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;35m  📋 SUB-SPEC SELECTION - Picking next sub-spec to work on\033[0m"
-    echo -e "\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "${C_ACCENT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_ACCENT}  📋 SUB-SPEC SELECTION - Picking next sub-spec to work on${C_RESET}"
+    echo -e "${C_ACCENT}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
     echo ""
 
     local select_log="$TEMP_DIR/spec_select.log"
@@ -30,7 +30,7 @@ run_spec_select() {
             --dangerously-skip-permissions \
             --output-format=json 2>&1 | tee "$select_log")
     else
-        echo -e "  \033[1;36m⏳\033[0m Selecting next sub-spec..."
+        echo -e "  ${C_PRIMARY}⏳${C_RESET} Selecting next sub-spec..."
 
         select_result=$(cat "./.ralph/prompts/spec_select.md" | claude -p \
             --dangerously-skip-permissions \
@@ -54,26 +54,26 @@ run_spec_select() {
 
     if [ "$action" = "select" ]; then
         echo ""
-        echo -e "\033[1;32m  ✓ Selected: $sub_spec_name — $sub_spec_title\033[0m"
-        echo -e "\033[1;36m  Progress: $progress_complete/$progress_total sub-specs complete\033[0m"
+        echo -e "${C_SUCCESS}  ✓ Selected: $sub_spec_name — $sub_spec_title${C_RESET}"
+        echo -e "${C_PRIMARY}  Progress: $progress_complete/$progress_total sub-specs complete${C_RESET}"
         echo ""
         CURRENT_SUBSPEC="$sub_spec_name"
         return 0  # Selected
     elif [ "$action" = "all_complete" ]; then
         echo ""
-        echo -e "\033[1;32m  ✓ All sub-specs complete! ($progress_total/$progress_total)\033[0m"
+        echo -e "${C_SUCCESS}  ✓ All sub-specs complete! ($progress_total/$progress_total)${C_RESET}"
         echo ""
         return 1  # All complete
     elif [ "$action" = "blocked" ]; then
         local reason=$(echo "$json_text" | jq -r '.reason // "Unknown"' 2>/dev/null)
         echo ""
-        echo -e "\033[1;31m  ✗ Blocked: $reason\033[0m"
+        echo -e "${C_ERROR}  ✗ Blocked: $reason${C_RESET}"
         echo ""
         return 2  # Blocked
     else
         echo ""
-        echo -e "\033[1;31m  ✗ Unexpected spec_select response: $action\033[0m"
-        echo -e "\033[1;31m  Raw result: $json_text\033[0m"
+        echo -e "${C_ERROR}  ✗ Unexpected spec_select response: $action${C_RESET}"
+        echo -e "${C_ERROR}  Raw result: $json_text${C_RESET}"
         echo ""
         return 2  # Treat as blocked
     fi
@@ -84,7 +84,7 @@ mark_subspec_complete() {
     local manifest_path="./.ralph/specs/${SPEC_NAME}/manifest.json"
 
     if [ ! -f "$manifest_path" ]; then
-        echo -e "\033[1;31m  ✗ Manifest not found: $manifest_path\033[0m"
+        echo -e "${C_ERROR}  ✗ Manifest not found: $manifest_path${C_RESET}"
         return 1
     fi
 
@@ -108,13 +108,13 @@ mark_subspec_complete() {
 
     if [ $jq_exit -eq 0 ] && [ -n "$updated" ]; then
         echo "$updated" > "$manifest_path"
-        echo -e "\033[1;32m  ✓ Marked $subspec_name as complete\033[0m"
+        echo -e "${C_SUCCESS}  ✓ Marked $subspec_name as complete${C_RESET}"
 
         git add "$manifest_path"
         git commit -m "Complete sub-spec: $subspec_name"
         git push origin "$CURRENT_BRANCH" 2>/dev/null || true
     else
-        echo -e "\033[1;31m  ✗ Failed to update manifest\033[0m"
+        echo -e "${C_ERROR}  ✗ Failed to update manifest${C_RESET}"
         return 1
     fi
 }
@@ -124,9 +124,9 @@ mark_subspec_complete() {
 # Returns: 0 if complete, 1 if gaps remain
 run_master_completion_check() {
     echo ""
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;33m  🔍 MASTER COMPLETION CHECK - Verifying all sub-specs cover the full spec\033[0m"
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_WARNING}  🔍 MASTER COMPLETION CHECK - Verifying all sub-specs cover the full spec${C_RESET}"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
     echo ""
 
     local check_log="$TEMP_DIR/master_completion_check.log"
@@ -137,7 +137,7 @@ run_master_completion_check() {
             --dangerously-skip-permissions \
             --output-format=json 2>&1 | tee "$check_log")
     else
-        echo -e "  \033[1;36m⏳\033[0m Running master completion check..."
+        echo -e "  ${C_PRIMARY}⏳${C_RESET} Running master completion check..."
 
         check_result=$(cat "./.ralph/prompts/master_completion_check.md" | claude -p \
             --dangerously-skip-permissions \
@@ -159,26 +159,26 @@ run_master_completion_check() {
 
     if [ "$is_complete" = "true" ]; then
         echo ""
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        echo -e "\033[1;32m  ✅ MASTER SPEC FULLY IMPLEMENTED!\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        echo -e "${C_SUCCESS}  ✅ MASTER SPEC FULLY IMPLEMENTED!${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_SUCCESS}  Confidence: ${confidence}${C_RESET}"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
         echo ""
         return 0  # Complete
     else
         echo ""
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        echo -e "\033[1;33m  ⚠ Master spec not yet fully satisfied\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        echo -e "${C_WARNING}  ⚠ Master spec not yet fully satisfied${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_WARNING}  Confidence: ${confidence}${C_RESET}"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
 
         # Show gaps if present
         local gaps=$(echo "$json_text" | jq -r '.gaps[]? // empty' 2>/dev/null)
         if [ -n "$gaps" ]; then
             echo ""
-            echo -e "  \033[1;33mGaps found:\033[0m"
+            echo -e "  ${C_WARNING}Gaps found:${C_RESET}"
             echo "$gaps" | while read -r gap; do
                 echo -e "    • $gap"
             done
