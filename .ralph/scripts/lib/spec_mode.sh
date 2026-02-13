@@ -9,11 +9,11 @@ run_spec_mode() {
     SPEC_READY=false
 
     echo ""
-    echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;35m║              SPEC CREATION MODE                            ║\033[0m"
-    echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  research → draft → refine → review → fix → signoff       ║\033[0m"
-    echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo -e "${C_ACCENT}╔════════════════════════════════════════════════════════════╗${C_RESET}"
+    echo -e "${C_ACCENT}║              SPEC CREATION MODE                            ║${C_RESET}"
+    echo -e "${C_ACCENT}╠════════════════════════════════════════════════════════════╣${C_RESET}"
+    echo -e "${C_ACCENT}║  research → draft → refine → review → fix → signoff       ║${C_RESET}"
+    echo -e "${C_ACCENT}╚════════════════════════════════════════════════════════════╝${C_RESET}"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -27,14 +27,14 @@ run_spec_mode() {
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
         if ! run_single_iteration "./.ralph/prompts/spec/research.md" $TOTAL_ITERATIONS "RESEARCH ($RESEARCH_ITERATION/$SPEC_RESEARCH_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Research phase failed"
+            echo -e "  ${C_ERROR}✗${C_RESET} Research phase failed"
             if check_circuit_breaker; then
                 break
             fi
         fi
     done
 
-    echo -e "  \033[1;32m✓\033[0m Research phase complete"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Research phase complete"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE: DRAFT
@@ -47,7 +47,7 @@ run_spec_mode() {
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
         if ! run_single_iteration "./.ralph/prompts/spec/draft.md" $TOTAL_ITERATIONS "DRAFT ($DRAFT_ITERATION/$SPEC_DRAFT_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Draft phase failed"
+            echo -e "  ${C_ERROR}✗${C_RESET} Draft phase failed"
             if check_circuit_breaker; then
                 break
             fi
@@ -56,14 +56,14 @@ run_spec_mode() {
 
     # Copy new spec to active.md if it was created
     if [ -f "$SPEC_FILE" ]; then
-        echo -e "  \033[1;36mℹ\033[0m  Copying spec to active.md"
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Copying spec to active.md"
         cp "$SPEC_FILE" "$ACTIVE_SPEC"
         git add "$ACTIVE_SPEC"
         git commit -m "spec: copy to active.md" 2>/dev/null || true
         git push origin "$CURRENT_BRANCH" 2>/dev/null || true
     fi
 
-    echo -e "  \033[1;32m✓\033[0m Draft phase complete"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Draft phase complete"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE: REFINE (with early exit)
@@ -79,7 +79,7 @@ run_spec_mode() {
         # Check for early exit — REFINEMENT_COMPLETE flag in spec_questions.md
         if [ -f "./.ralph/spec_questions.md" ]; then
             if grep -q 'REFINEMENT_COMPLETE=true' "./.ralph/spec_questions.md" 2>/dev/null; then
-                echo -e "  \033[1;32m✓\033[0m Refinement complete — all questions answered, no feedback pending"
+                echo -e "  ${C_SUCCESS}✓${C_RESET} Refinement complete — all questions answered, no feedback pending"
                 REFINEMENT_DONE=true
                 break
             fi
@@ -87,8 +87,8 @@ run_spec_mode() {
             # Show unanswered question count
             UNANSWERED=$(grep -c '^A:$\|^A: *$' "./.ralph/spec_questions.md" 2>/dev/null) || UNANSWERED=0
             if [ "$UNANSWERED" -gt 0 ]; then
-                echo -e "  \033[1;34mℹ\033[0m  $UNANSWERED unanswered questions remaining"
-                echo -e "  \033[1;34mℹ\033[0m  Edit .ralph/spec_questions.md to answer them, then this phase will incorporate them"
+                echo -e "  ${C_PRIMARY}ℹ${C_RESET}  $UNANSWERED unanswered questions remaining"
+                echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Edit .ralph/spec_questions.md to answer them, then this phase will incorporate them"
             fi
         fi
 
@@ -96,19 +96,19 @@ run_spec_mode() {
         if [ -f "./.ralph/user-review.md" ]; then
             REVIEW_LINES=$(wc -l < "./.ralph/user-review.md" 2>/dev/null || echo "0")
             if [ "$REVIEW_LINES" -gt 1 ]; then
-                echo -e "  \033[1;34mℹ\033[0m  User review feedback detected ($REVIEW_LINES lines)"
+                echo -e "  ${C_PRIMARY}ℹ${C_RESET}  User review feedback detected ($REVIEW_LINES lines)"
             fi
         fi
 
         if ! run_single_iteration "./.ralph/prompts/spec/refine.md" $TOTAL_ITERATIONS "REFINE ($REFINE_ITERATION/$SPEC_REFINE_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Refine iteration failed"
+            echo -e "  ${C_ERROR}✗${C_RESET} Refine iteration failed"
             if check_circuit_breaker; then
                 break
             fi
         fi
     done
 
-    echo -e "  \033[1;32m✓\033[0m Refine phase complete ($REFINE_ITERATION iterations)"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Refine phase complete ($REFINE_ITERATION iterations)"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE: REVIEW
@@ -121,14 +121,14 @@ run_spec_mode() {
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
         if ! run_single_iteration "./.ralph/prompts/spec/review.md" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Review phase failed"
+            echo -e "  ${C_ERROR}✗${C_RESET} Review phase failed"
             if check_circuit_breaker; then
                 break
             fi
         fi
     done
 
-    echo -e "  \033[1;32m✓\033[0m Review phase complete"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Review phase complete"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE: REVIEW-FIX (conditional)
@@ -145,7 +145,7 @@ run_spec_mode() {
 
     if [ "$SHOULD_RUN_SPEC_FIX" = true ]; then
         print_phase_banner "SPEC REVIEW-FIX" $SPEC_REVIEWFIX_ITERS
-        echo -e "  \033[1;34mℹ\033[0m  Issues to fix: \033[1;31m❌ Blocking: $SPEC_FIX_BLOCKING\033[0m  \033[1;33m⚠️ Attention: $SPEC_FIX_ATTENTION\033[0m"
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Issues to fix: ${C_ERROR}❌ Blocking: $SPEC_FIX_BLOCKING${C_RESET}  ${C_WARNING}⚠️ Attention: $SPEC_FIX_ATTENTION${C_RESET}"
 
         REVIEWFIX_ITERATION=0
         while [ $REVIEWFIX_ITERATION -lt $SPEC_REVIEWFIX_ITERS ]; do
@@ -153,16 +153,16 @@ run_spec_mode() {
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
             if ! run_single_iteration "./.ralph/prompts/spec/review_fix.md" $TOTAL_ITERATIONS "SPEC REVIEW-FIX ($REVIEWFIX_ITERATION/$SPEC_REVIEWFIX_ITERS)"; then
-                echo -e "  \033[1;31m✗\033[0m Review-fix iteration failed"
+                echo -e "  ${C_ERROR}✗${C_RESET} Review-fix iteration failed"
                 if check_circuit_breaker; then
                     break
                 fi
             fi
         done
 
-        echo -e "  \033[1;32m✓\033[0m Review-fix phase complete"
+        echo -e "  ${C_SUCCESS}✓${C_RESET} Review-fix phase complete"
     else
-        echo -e "  \033[1;32m✓\033[0m No blocking/attention issues — skipping review-fix"
+        echo -e "  ${C_SUCCESS}✓${C_RESET} No blocking/attention issues — skipping review-fix"
     fi
 
     # ─────────────────────────────────────────────────────────────────────
@@ -181,15 +181,15 @@ run_spec_mode() {
     rm -f "$STATE_FILE"
 
     echo ""
-    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
     if [ "$SPEC_READY" = true ]; then
-        echo -e "\033[1;32m  🎉 Spec created and approved in $TOTAL_ITERATIONS iteration(s)\033[0m"
-        echo -e "\033[1;32m  Next: node .ralph/run.js $SPEC_NAME plan\033[0m"
+        echo -e "${C_SUCCESS}  🎉 Spec created and approved in $TOTAL_ITERATIONS iteration(s)${C_RESET}"
+        echo -e "${C_SUCCESS}  Next: node .ralph/run.js $SPEC_NAME plan${C_RESET}"
     else
-        echo -e "\033[1;33m  ⚠ Spec needs your input before it can be approved\033[0m"
-        echo -e "\033[1;33m════════════════════════════════════════════════════════════\033[0m"
+        echo -e "${C_WARNING}  ⚠ Spec needs your input before it can be approved${C_RESET}"
+        echo -e "${C_WARNING}════════════════════════════════════════════════════════════${C_RESET}"
         echo ""
-        echo -e "\033[1;36m  📋 WHAT TO DO NEXT:\033[0m"
+        echo -e "${C_PRIMARY}  📋 WHAT TO DO NEXT:${C_RESET}"
         echo ""
 
         # Check for unanswered questions
@@ -197,12 +197,12 @@ run_spec_mode() {
         if [ -f "$QUESTIONS_FILE" ]; then
             UNANSWERED=$(grep -c '^A:$\|^A: *$' "$QUESTIONS_FILE" 2>/dev/null) || UNANSWERED=0
             if [ "$UNANSWERED" -gt 0 ]; then
-                echo -e "  \033[1;33m1. Answer $UNANSWERED question(s) in:\033[0m"
-                echo -e "     \033[1;37m.ralph/spec_questions.md\033[0m"
-                echo -e "     \033[2m(Find lines starting with 'A:' and add your answers)\033[0m"
+                echo -e "  ${C_WARNING}1. Answer $UNANSWERED question(s) in:${C_RESET}"
+                echo -e "     ${C_HIGHLIGHT}.ralph/spec_questions.md${C_RESET}"
+                echo -e "     ${C_MUTED}(Find lines starting with 'A:' and add your answers)${C_RESET}"
                 echo ""
             else
-                echo -e "  \033[1;32m✓ All questions answered in .ralph/spec_questions.md\033[0m"
+                echo -e "  ${C_SUCCESS}✓ All questions answered in .ralph/spec_questions.md${C_RESET}"
                 echo ""
             fi
         fi
@@ -213,26 +213,26 @@ run_spec_mode() {
             BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$SPEC_REVIEW_FILE" 2>/dev/null) || BLOCKING=0
             ATTENTION=$(grep -c '⚠️.*NEEDS ATTENTION\|NEEDS ATTENTION.*⚠️' "$SPEC_REVIEW_FILE" 2>/dev/null) || ATTENTION=0
             if [ "$BLOCKING" -gt 0 ] || [ "$ATTENTION" -gt 0 ]; then
-                echo -e "  \033[1;33m2. Review issues found:\033[0m"
-                echo -e "     \033[1;37m.ralph/spec_review.md\033[0m"
-                [ "$BLOCKING" -gt 0 ] && echo -e "     \033[1;31m❌ $BLOCKING blocking issue(s)\033[0m"
-                [ "$ATTENTION" -gt 0 ] && echo -e "     \033[1;33m⚠️  $ATTENTION item(s) need attention\033[0m"
+                echo -e "  ${C_WARNING}2. Review issues found:${C_RESET}"
+                echo -e "     ${C_HIGHLIGHT}.ralph/spec_review.md${C_RESET}"
+                [ "$BLOCKING" -gt 0 ] && echo -e "     ${C_ERROR}❌ $BLOCKING blocking issue(s)${C_RESET}"
+                [ "$ATTENTION" -gt 0 ] && echo -e "     ${C_WARNING}⚠️  $ATTENTION item(s) need attention${C_RESET}"
                 echo ""
             fi
         fi
 
         # Optional feedback file
-        echo -e "  \033[1;36m3. (Optional) Add general feedback in:\033[0m"
-        echo -e "     \033[1;37m.ralph/user-review.md\033[0m"
+        echo -e "  ${C_PRIMARY}3. (Optional) Add general feedback in:${C_RESET}"
+        echo -e "     ${C_HIGHLIGHT}.ralph/user-review.md${C_RESET}"
         echo ""
 
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        echo -e "  \033[1;36m▶ When ready, re-run:\033[0m"
-        echo -e "     \033[1;37mnode .ralph/run.js $SPEC_NAME spec\033[0m"
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        echo -e "  ${C_PRIMARY}▶ When ready, re-run:${C_RESET}"
+        echo -e "     ${C_HIGHLIGHT}node .ralph/run.js $SPEC_NAME spec${C_RESET}"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
     fi
     echo ""
-    echo -e "  \033[2mTotal time: $FINAL_FORMATTED | Errors: $ERROR_COUNT\033[0m"
-    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo -e "  ${C_MUTED}Total time: $FINAL_FORMATTED | Errors: $ERROR_COUNT${C_RESET}"
+    echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
     echo ""
 }

@@ -36,9 +36,9 @@ get_next_review_specialist() {
 # Returns: 0 if complete, 1 if not complete
 run_completion_check() {
     echo ""
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;33m  🔍 COMPLETION CHECK - Is the spec fully implemented?\033[0m"
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_WARNING}  🔍 COMPLETION CHECK - Is the spec fully implemented?${C_RESET}"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
     echo ""
 
     local check_log="$TEMP_DIR/completion_check.log"
@@ -49,7 +49,7 @@ run_completion_check() {
             --dangerously-skip-permissions \
             --output-format=json 2>&1 | tee "$check_log")
     else
-        echo -e "  \033[1;36m⏳\033[0m Checking if implementation is complete..."
+        echo -e "  ${C_PRIMARY}⏳${C_RESET} Checking if implementation is complete..."
 
         check_result=$(cat "./.ralph/prompts/completion_check.md" | claude -p \
             --dangerously-skip-permissions \
@@ -69,20 +69,20 @@ run_completion_check() {
 
     if [ "$is_complete" = "true" ]; then
         echo ""
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        echo -e "\033[1;32m  ✅ IMPLEMENTATION COMPLETE!\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        echo -e "${C_SUCCESS}  ✅ IMPLEMENTATION COMPLETE!${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_SUCCESS}  Confidence: ${confidence}${C_RESET}"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
         echo ""
         return 0  # Complete
     else
         echo ""
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        echo -e "\033[1;33m  ⚠ Implementation not yet complete\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        [ -n "$reason" ] && echo -e "  \033[1;36m$reason\033[0m"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        echo -e "${C_WARNING}  ⚠ Implementation not yet complete${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_WARNING}  Confidence: ${confidence}${C_RESET}"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
         echo ""
         return 1  # Not complete
     fi
@@ -92,9 +92,9 @@ run_completion_check() {
 # Returns: 0 if ready, 1 if not ready
 run_spec_signoff_check() {
     echo ""
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
-    echo -e "\033[1;33m  🔍 SPEC SIGN-OFF CHECK - Is the spec ready for implementation?\033[0m"
-    echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_WARNING}  🔍 SPEC SIGN-OFF CHECK - Is the spec ready for implementation?${C_RESET}"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
     echo ""
 
     local check_log="$TEMP_DIR/spec_signoff.log"
@@ -105,7 +105,7 @@ run_spec_signoff_check() {
             --dangerously-skip-permissions \
             --output-format=json 2>&1 | tee "$check_log")
     else
-        echo -e "  \033[1;36m⏳\033[0m Checking if spec is ready for implementation..."
+        echo -e "  ${C_PRIMARY}⏳${C_RESET} Checking if spec is ready for implementation..."
 
         check_result=$(cat "./.ralph/prompts/spec/signoff.md" | claude -p \
             --dangerously-skip-permissions \
@@ -129,23 +129,23 @@ run_spec_signoff_check() {
 
     if [ "$is_ready" = "true" ]; then
         echo ""
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        echo -e "\033[1;32m  ✅ SPEC APPROVED!\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;32m  Confidence: ${confidence}\033[0m"
-        [ -n "$sections_complete" ] && [ -n "$sections_total" ] && echo -e "\033[1;32m  Sections: ${sections_complete}/${sections_total}\033[0m"
-        echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-        [ -n "$recommendation" ] && echo -e "  \033[1;36m$recommendation\033[0m"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        echo -e "${C_SUCCESS}  ✅ SPEC APPROVED!${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_SUCCESS}  Confidence: ${confidence}${C_RESET}"
+        [ -n "$sections_complete" ] && [ -n "$sections_total" ] && echo -e "${C_SUCCESS}  Sections: ${sections_complete}/${sections_total}${C_RESET}"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        [ -n "$recommendation" ] && echo -e "  ${C_PRIMARY}$recommendation${C_RESET}"
         echo ""
         return 0  # Ready
     else
         echo ""
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        echo -e "\033[1;33m  ⚠ Spec not yet ready for implementation\033[0m"
-        [ -n "$confidence" ] && echo -e "\033[1;33m  Confidence: ${confidence}\033[0m"
-        [ -n "$blocking" ] && echo -e "\033[1;33m  Blocking issues: ${blocking}\033[0m"
-        [ -n "$unanswered" ] && echo -e "\033[1;33m  Unanswered questions: ${unanswered}\033[0m"
-        echo -e "\033[1;33m────────────────────────────────────────────────────────────\033[0m"
-        [ -n "$recommendation" ] && echo -e "  \033[1;36m$recommendation\033[0m"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        echo -e "${C_WARNING}  ⚠ Spec not yet ready for implementation${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_WARNING}  Confidence: ${confidence}${C_RESET}"
+        [ -n "$blocking" ] && echo -e "${C_WARNING}  Blocking issues: ${blocking}${C_RESET}"
+        [ -n "$unanswered" ] && echo -e "${C_WARNING}  Unanswered questions: ${unanswered}${C_RESET}"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        [ -n "$recommendation" ] && echo -e "  ${C_PRIMARY}$recommendation${C_RESET}"
         echo ""
         return 1  # Not ready
     fi

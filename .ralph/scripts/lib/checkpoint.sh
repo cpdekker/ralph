@@ -33,7 +33,7 @@ load_state() {
     if [ -f "$STATE_FILE" ]; then
         local saved_spec=$(grep -o '"spec_name"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE_FILE" 2>/dev/null | head -1 | sed 's/"spec_name"[[:space:]]*:[[:space:]]*"\(.*\)"/\1/')
         if [ "$saved_spec" = "$SPEC_NAME" ]; then
-            echo -e "\033[1;33m📋 Found checkpoint for $SPEC_NAME\033[0m"
+            echo -e "${C_WARNING}📋 Found checkpoint for $SPEC_NAME${C_RESET}"
             cat "$STATE_FILE"
             echo ""
             return 0

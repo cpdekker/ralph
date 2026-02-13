@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { execSync } = require('child_process');
 const path = require('path');
+const { c, success, error } = require('../lib/ui');
 
 const rootDir = path.resolve(__dirname, '../..');
 
@@ -8,15 +9,15 @@ const rootDir = path.resolve(__dirname, '../..');
 const repoName = path.basename(rootDir).toLowerCase().replace(/[^a-z0-9-]/g, '-');
 const imageName = `ralph-wiggum-${repoName}`;
 
-console.log(`\x1b[36mBuilding ${imageName} image...\x1b[0m`);
+console.log(`${c('cyan', `  Building ${imageName} image...`)}`);
 
 try {
   execSync(`docker build -t ${imageName} -f .ralph/docker/Dockerfile .`, {
     stdio: 'inherit',
     cwd: rootDir,
   });
-  console.log('\x1b[32mBuild complete.\x1b[0m');
+  success('Build complete.');
 } catch {
-  console.error('\x1b[31mBuild failed.\x1b[0m');
+  error('Build failed.');
   process.exit(1);
 }

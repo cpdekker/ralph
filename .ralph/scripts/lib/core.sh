@@ -20,7 +20,7 @@ run_single_iteration() {
 
     # Display turn banner
     print_turn_banner $iteration_num
-    echo -e "  \033[1;35mPhase:\033[0m $phase_name"
+    echo -e "  ${C_ACCENT}Phase:${C_RESET} $phase_name"
     echo ""
 
     # Save checkpoint
@@ -37,7 +37,7 @@ run_single_iteration() {
         CLAUDE_EXIT=${PIPESTATUS[1]}
 
         if [ $CLAUDE_EXIT -ne 0 ]; then
-            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+            echo -e "  ${C_ERROR}✗${C_RESET} Claude exited with code $CLAUDE_EXIT"
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
@@ -48,28 +48,25 @@ run_single_iteration() {
             append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
     else
-        echo -e "  \033[1;36m⏳\033[0m Running Claude iteration $iteration_num..."
-        echo ""
-
         cat "$prompt_file" | claude -p \
             --dangerously-skip-permissions \
             --output-format=stream-json \
             --verbose > "$LOG_FILE" 2>&1 &
 
         CLAUDE_PID=$!
-        spin $CLAUDE_PID
+        spin $CLAUDE_PID "Running Claude iteration $iteration_num..."
         wait $CLAUDE_PID
         CLAUDE_EXIT=$?
 
         if [ $CLAUDE_EXIT -ne 0 ]; then
-            echo -e "  \033[1;31m✗\033[0m Claude exited with code $CLAUDE_EXIT"
+            echo -e "  ${C_ERROR}✗${C_RESET} Claude exited with code $CLAUDE_EXIT"
             echo "  Check log: $LOG_FILE"
             CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
             ERROR_COUNT=$((ERROR_COUNT + 1))
             append_progress "iteration_failure" "phase=$phase_name iter=$iteration_num exit_code=$CLAUDE_EXIT"
             return 1
         else
-            echo -e "  \033[1;32m✓\033[0m Claude iteration completed"
+            echo -e "  ${C_SUCCESS}✓${C_RESET} Claude iteration completed"
             CONSECUTIVE_FAILURES=0  # Reset on success
             append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
         fi
@@ -80,7 +77,7 @@ run_single_iteration() {
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
-        echo -e "  \033[1;33m⚠️  DEBUG MODE - Skipping commit and push\033[0m"
+        echo -e "  ${C_WARNING}⚠️  DEBUG MODE - Skipping commit and push${C_RESET}"
         return 0
     fi
 
@@ -102,14 +99,10 @@ run_single_iteration() {
 # Check if circuit breaker should trip (too many consecutive failures)
 check_circuit_breaker() {
     if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
-        echo ""
-        echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
-        echo -e "\033[1;31m  🔴 CIRCUIT BREAKER TRIPPED\033[0m"
-        echo -e "\033[1;31m  $CONSECUTIVE_FAILURES consecutive failures detected\033[0m"
-        echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
-        echo ""
-        echo -e "  \033[1;33mRalph has paused to prevent further issues.\033[0m"
-        echo -e "  \033[1;33mHuman intervention required.\033[0m"
+        ralph_header "Circuit Breaker Tripped"
+        ralph_error "$CONSECUTIVE_FAILURES consecutive failures detected"
+        ralph_warn "Ralph has paused to prevent further issues."
+        ralph_hint "Human intervention required."
         echo ""
 
         append_progress "circuit_breaker" "$CONSECUTIVE_FAILURES consecutive failures"

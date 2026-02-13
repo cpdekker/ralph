@@ -8,9 +8,9 @@ fi
 # Background mode: clone repo instead of using mounted volume
 if [ -n "$RALPH_REPO_URL" ]; then
     echo ""
-    echo "═══════════════════════════════════════════════════════════"
-    echo "  🔄 BACKGROUND MODE - Cloning repository"
-    echo "═══════════════════════════════════════════════════════════"
+    echo -e "\033[1;33m  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+    echo -e "  \033[1;35mBackground Mode — Cloning Repository\033[0m"
+    echo -e "\033[1;33m  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
     echo ""
     
     # Clone to /home/ralph/repo (not /workspace which may be mounted)

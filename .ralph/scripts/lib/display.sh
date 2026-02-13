@@ -2,192 +2,88 @@
 # Ralph Wiggum - Display & Formatting Utilities
 # Sourced by loop.sh — do not run directly.
 
-# ASCII art digits for turn display
-print_turn_banner() {
-    local num=$1
+# ═══════════════════════════════════════════════════════════════════════════════
+# SIMPSONS COLOR PALETTE — Semantic color variables
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # Define each digit as an array of lines (8 lines tall)
-    local d0=(
-        "  ██████  "
-        " ██    ██ "
-        " ██    ██ "
-        " ██    ██ "
-        " ██    ██ "
-        " ██    ██ "
-        "  ██████  "
-        "          "
-    )
-    local d1=(
-        "    ██    "
-        "   ███    "
-        "    ██    "
-        "    ██    "
-        "    ██    "
-        "    ██    "
-        "  ██████  "
-        "          "
-    )
-    local d2=(
-        "  ██████  "
-        " ██    ██ "
-        "       ██ "
-        "   █████  "
-        "  ██      "
-        " ██       "
-        " ████████ "
-        "          "
-    )
-    local d3=(
-        "  ██████  "
-        " ██    ██ "
-        "       ██ "
-        "   █████  "
-        "       ██ "
-        " ██    ██ "
-        "  ██████  "
-        "          "
-    )
-    local d4=(
-        " ██    ██ "
-        " ██    ██ "
-        " ██    ██ "
-        " ████████ "
-        "       ██ "
-        "       ██ "
-        "       ██ "
-        "          "
-    )
-    local d5=(
-        " ████████ "
-        " ██       "
-        " ██       "
-        " ███████  "
-        "       ██ "
-        " ██    ██ "
-        "  ██████  "
-        "          "
-    )
-    local d6=(
-        "  ██████  "
-        " ██       "
-        " ██       "
-        " ███████  "
-        " ██    ██ "
-        " ██    ██ "
-        "  ██████  "
-        "          "
-    )
-    local d7=(
-        " ████████ "
-        "       ██ "
-        "      ██  "
-        "     ██   "
-        "    ██    "
-        "    ██    "
-        "    ██    "
-        "          "
-    )
-    local d8=(
-        "  ██████  "
-        " ██    ██ "
-        " ██    ██ "
-        "  ██████  "
-        " ██    ██ "
-        " ██    ██ "
-        "  ██████  "
-        "          "
-    )
-    local d9=(
-        "  ██████  "
-        " ██    ██ "
-        " ██    ██ "
-        "  ███████ "
-        "       ██ "
-        "       ██ "
-        "  ██████  "
-        "          "
-    )
+C_RESET='\033[0m'
+C_BRIGHT='\033[1m'
+C_BRAND='\033[1;33m'       # Simpsons Yellow — branding, turn banners
+C_PRIMARY='\033[1;36m'     # Marge Blue/Cyan — info, prompts, progress
+C_SUCCESS='\033[1;32m'     # Springfield Green — checkmarks, success
+C_ERROR='\033[1;31m'       # Bart Red — errors, failures
+C_WARNING='\033[1;33m'     # Homer Yellow — warnings, caution
+C_ACCENT='\033[1;35m'      # Krusty Magenta — headers, phase banners
+C_MUTED='\033[2m'          # Dim — secondary text, separators
+C_HIGHLIGHT='\033[1;37m'   # Bright White — emphasis
 
-    # TURN text (8 lines tall)
-    local turn=(
-        " ████████ ██    ██ ██████  ███    ██ "
-        "    ██    ██    ██ ██   ██ ████   ██ "
-        "    ██    ██    ██ ██   ██ ██ ██  ██ "
-        "    ██    ██    ██ ██████  ██  ██ ██ "
-        "    ██    ██    ██ ██   ██ ██   ████ "
-        "    ██    ██    ██ ██   ██ ██    ███ "
-        "    ██     ██████  ██   ██ ██     ██ "
-        "                                     "
-    )
+# Specialist review colors
+C_SEC='\033[1;31m'         # Security — red
+C_UX='\033[1;35m'          # UX — magenta
+C_DB='\033[1;36m'          # DB — cyan
+C_PERF='\033[1;32m'        # Performance — green
+C_API='\033[1;34m'         # API — blue
+C_QA='\033[1;33m'          # QA — yellow
 
-    # Colon (8 lines tall)
-    local colon=(
-        "    "
-        " ██ "
-        " ██ "
-        "    "
-        " ██ "
-        " ██ "
-        "    "
-        "    "
-    )
+# ═══════════════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    # Get digits of the number
-    local digits=()
-    local temp_num=$num
-    if [ $temp_num -eq 0 ]; then
-        digits=(0)
-    else
-        while [ $temp_num -gt 0 ]; do
-            digits=($((temp_num % 10)) "${digits[@]}")
-            temp_num=$((temp_num / 10))
-        done
-    fi
+ralph_success() { echo -e "  ${C_SUCCESS}\u2713${C_RESET} $1"; }
+ralph_error()   { echo -e "  ${C_ERROR}\u2717${C_RESET} $1"; }
+ralph_warn()    { echo -e "  ${C_WARNING}\u26A0${C_RESET} $1"; }
+ralph_info()    { echo -e "  ${C_PRIMARY}\u2139${C_RESET}  $1"; }
+ralph_hint()    { echo -e "  ${C_MUTED}Tip: $1${C_RESET}"; }
+ralph_separator() { echo -e "  ${C_MUTED}$(printf '─%.0s' {1..50})${C_RESET}"; }
 
+ralph_header() {
+    local msg=$1
     echo ""
-    echo ""
-    echo -e "\033[1;33m" # Bold yellow
-
-    # Print each line
-    for line in 0 1 2 3 4 5 6 7; do
-        local output="${turn[$line]}${colon[$line]}"
-
-        # Add each digit
-        for digit in "${digits[@]}"; do
-            case $digit in
-                0) output+="${d0[$line]}" ;;
-                1) output+="${d1[$line]}" ;;
-                2) output+="${d2[$line]}" ;;
-                3) output+="${d3[$line]}" ;;
-                4) output+="${d4[$line]}" ;;
-                5) output+="${d5[$line]}" ;;
-                6) output+="${d6[$line]}" ;;
-                7) output+="${d7[$line]}" ;;
-                8) output+="${d8[$line]}" ;;
-                9) output+="${d9[$line]}" ;;
-            esac
-        done
-
-        echo "    $output"
-    done
-
-    echo -e "\033[0m" # Reset color
-    echo ""
+    echo -e "  ${C_ACCENT}${msg}${C_RESET}"
+    echo -e "  ${C_MUTED}$(printf '─%.0s' {1..50})${C_RESET}"
     echo ""
 }
 
-# Print a spinner while waiting for a background process
+# ═══════════════════════════════════════════════════════════════════════════════
+# STARTUP INFO BLOCK (for loop.sh startup section)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+ralph_startup_info() {
+    local spec=$1
+    local mode=$2
+    local branch=$3
+    local verbose=$4
+
+    echo -e "${C_MUTED}$(printf '━%.0s' {1..40})${C_RESET}"
+    echo -e "${C_MUTED}  spec${C_RESET}      $spec"
+    echo -e "${C_MUTED}  mode${C_RESET}      $mode"
+    echo -e "${C_MUTED}  branch${C_RESET}    $branch"
+    echo -e "${C_MUTED}  verbose${C_RESET}   $verbose"
+}
+
+# Compact Simpsons-themed turn banner
+print_turn_banner() {
+    local num=$1
+    echo ""
+    echo -e "${C_BRAND}  ━━━━━━━━━━━━━━━━━━━━ TURN ${num} ━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo ""
+}
+
+# Print a donut-eating spinner while waiting for a background process
+# Homer's donut — Simpsons-themed animation
 spin() {
     local pid=$1
-    local delay=0.1
-    local spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local msg=${2:-"Working..."}
+    local delay=0.2
+    local frames=('(O)' '(O)' '(C)' '(c)' '(.)' '( )' '( )' '(o)')
+    local num_frames=${#frames[@]}
+    local i=0
     while ps -p $pid > /dev/null 2>&1; do
-        for i in $(seq 0 9); do
-            printf "\r  \033[1;36m${spinstr:$i:1}\033[0m Working... "
-            sleep $delay
-        done
+        printf "\r  ${C_BRAND}${frames[$i]}${C_RESET} ${msg} "
+        i=$(( (i + 1) % num_frames ))
+        sleep $delay
     done
-    printf "\r                      \r"
+    printf "\r$(printf ' %.0s' {1..80})\r"
 }
 
 # Format seconds into human-readable time (e.g., "1h 23m 45s")
@@ -219,14 +115,10 @@ generate_summary() {
     local turn_formatted=$(format_duration $turn_duration)
     local total_formatted=$(format_duration $total_elapsed)
 
-    echo ""
-    echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
-    echo -e "\033[1;36m│  TURN $iteration SUMMARY                                            │\033[0m"
-    echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
-    echo ""
+    ralph_header "Turn $iteration Summary"
 
-    echo -e "  \033[1;35m⏱\033[0m  Turn duration:  $turn_formatted"
-    echo -e "  \033[1;35m⏱\033[0m  Total elapsed:  $total_formatted"
+    echo -e "  ${C_ACCENT}⏱${C_RESET}  Turn duration:  $turn_formatted"
+    echo -e "  ${C_ACCENT}⏱${C_RESET}  Total elapsed:  $total_formatted"
     echo ""
 
     # Count files modified (look for write/edit operations)
@@ -238,14 +130,14 @@ generate_summary() {
     # Look for test runs
     local tests=$(grep -o 'npm test\|npm run test\|npx nx test\|jest\|vitest' "$log_file" 2>/dev/null | wc -l)
 
-    echo -e "  \033[1;32m✓\033[0m Files touched: ~$files_changed"
-    echo -e "  \033[1;32m✓\033[0m Git commits: $commits"
-    echo -e "  \033[1;32m✓\033[0m Test runs: $tests"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Files touched: ~$files_changed"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Git commits: $commits"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Test runs: $tests"
     echo ""
 
     # Show recent git log if there were commits
     if [ $commits -gt 0 ]; then
-        echo -e "  \033[1;33mRecent commits:\033[0m"
+        echo -e "  ${C_WARNING}Recent commits:${C_RESET}"
         git log --oneline -3 2>/dev/null | sed 's/^/    /'
         echo ""
     fi
@@ -253,12 +145,12 @@ generate_summary() {
     # Show changed files from git status
     local changed_files=$(git diff --name-only HEAD~1 2>/dev/null | head -10)
     if [ -n "$changed_files" ]; then
-        echo -e "  \033[1;33mChanged files:\033[0m"
+        echo -e "  ${C_WARNING}Changed files:${C_RESET}"
         echo "$changed_files" | sed 's/^/    /'
         echo ""
     fi
 
-    echo -e "\033[1;36m────────────────────────────────────────────────────────────\033[0m"
+    ralph_separator
     echo ""
 }
 
@@ -266,12 +158,8 @@ generate_summary() {
 print_cycle_banner() {
     local cycle_num=$1
     echo ""
-    echo ""
-    echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
-    echo -e "\033[1;35m║                      CYCLE $cycle_num                              ║\033[0m"
-    echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check  ║\033[0m"
-    echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo -e "${C_BRAND}  ━━━━━━━━━━━━━━━━━━ CYCLE ${cycle_num} ━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_MUTED}  plan(${FULL_PLAN_ITERS}) → build(${FULL_BUILD_ITERS}) → review(${FULL_REVIEW_ITERS}) → fix(${FULL_REVIEWFIX_ITERS}) → distill(${FULL_DISTILL_ITERS}) → check${C_RESET}"
     echo ""
 }
 
@@ -280,8 +168,6 @@ print_phase_banner() {
     local phase_name=$1
     local phase_iters=$2
     echo ""
-    echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
-    echo -e "\033[1;36m│  $phase_name PHASE ($phase_iters iterations)                       \033[0m"
-    echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+    echo -e "  ${C_ACCENT}▸ ${phase_name} PHASE${C_RESET} ${C_MUTED}(${phase_iters} iterations)${C_RESET}"
     echo ""
 }
