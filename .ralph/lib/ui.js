@@ -1,7 +1,6 @@
-// Ralph Wiggum - UI & Theming Module
+// Ralph Wiggum - Standalone UI Module (portable)
+// Self-contained — no dependency on the npm package's lib/utils/colors.js
 // Simpsons-inspired color palette with helpers for consistent CLI output
-
-const path = require('path');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ANSI CODES
@@ -55,12 +54,6 @@ function error(msg) { console.log(`${theme.error}  \u2717 ${msg}${codes.reset}`)
 function info(msg) { console.log(`${theme.muted}    ${msg}${codes.reset}`); }
 function dim(msg) { console.log(`${theme.muted}${msg}${codes.reset}`); }
 
-function debug(msg) {
-  if (process.env.RALPH_DEBUG === '1') {
-    console.log(`${theme.muted}  [debug] ${msg}${codes.reset}`);
-  }
-}
-
 function step(n, total, desc) {
   console.log('');
   console.log(`${theme.primary}  [${n}/${total}] ${desc}${codes.reset}`);
@@ -76,19 +69,6 @@ function header(msg) {
 
 function separator() {
   console.log(`${theme.muted}  ${'─'.repeat(50)}${codes.reset}`);
-}
-
-function box(lines) {
-  const stripped = lines.map(l => stripAnsi(l));
-  const maxLen = Math.max(...stripped.map(s => s.length), 0);
-  const w = maxLen + 2;
-
-  console.log(`${theme.muted}  ┌${'─'.repeat(w)}┐${codes.reset}`);
-  for (let i = 0; i < lines.length; i++) {
-    const pad = w - 2 - stripped[i].length;
-    console.log(`${theme.muted}  │${codes.reset} ${lines[i]}${' '.repeat(Math.max(pad, 0))} ${theme.muted}│${codes.reset}`);
-  }
-  console.log(`${theme.muted}  └${'─'.repeat(w)}┘${codes.reset}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -171,11 +151,7 @@ function printRalph() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function startupBanner(config = {}) {
-  let version = '0.0.0';
-  try {
-    const pkg = require(path.resolve(__dirname, '../../package.json'));
-    version = pkg.version;
-  } catch {}
+  const version = config.version || '0.0.0';
 
   console.log('');
 
@@ -191,7 +167,6 @@ function startupBanner(config = {}) {
   if (config.background !== undefined) configLines.push(`${theme.muted}  background${codes.reset}  ${config.background}`);
   if (config.branch) configLines.push(`${theme.muted}  branch${codes.reset}      ${config.branch}`);
   if (config.docker) configLines.push(`${theme.muted}  docker${codes.reset}      ${config.docker}`);
-  if (config.insights) configLines.push(`${theme.muted}  insights${codes.reset}    ${config.insights}`);
 
   // Use head portion (first 10 lines) for compact banner display
   const bannerArt = RALPH_ASCII.slice(0, 10);
@@ -215,36 +190,18 @@ function startupBanner(config = {}) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const hints = {
-  afterPlan: 'Next: run "ralph build <spec>" to start implementing the plan.',
-  afterBuild: 'Next: run "ralph review <spec>" to review the implementation.',
-  afterReview: 'Next: run "ralph review-fix <spec>" to fix review issues.',
-  afterFull: 'Check the branch for results: git fetch origin && git checkout ralph/<spec>',
-  noSpecs: 'Create a spec with: ralph spec <feature-name>',
-  envMissing: 'Run "ralph init" to configure credentials.',
+  afterPlan: 'Next: run your spec through build mode to start implementing.',
+  afterBuild: 'Next: run review mode to check the implementation.',
+  afterReview: 'Next: run review-fix to address review issues.',
+  noSpecs: 'Create a spec in .ralph/specs/<name>.md or use spec mode.',
+  envMissing: 'Copy .ralph/.env.example to .ralph/.env and add your credentials.',
   backgroundMode: 'Ctrl+C stops Ralph. Container logs: docker logs -f <container>.',
-  interactiveShortcuts: 'Tip: Use "ralph <mode> <spec> -y" to skip prompts.',
-  dockerMissing: 'Install Docker: https://docs.docker.com/get-docker/',
 };
 
 function hint(key) {
   const msg = hints[key];
   if (msg) {
     console.log(`${theme.muted}  Tip: ${msg}${codes.reset}`);
-  }
-}
-
-function showPostRunHints(mode) {
-  const map = {
-    plan: 'afterPlan',
-    build: 'afterBuild',
-    review: 'afterReview',
-    'review-fix': 'afterReview',
-    full: 'afterFull',
-  };
-  const key = map[mode];
-  if (key) {
-    console.log('');
-    hint(key);
   }
 }
 
@@ -262,16 +219,13 @@ module.exports = {
   error,
   info,
   dim,
-  debug,
   step,
   header,
   separator,
-  box,
   createSpinner,
   printRalph,
   startupBanner,
   hints,
   hint,
-  showPostRunHints,
   RALPH_ASCII,
 };

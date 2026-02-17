@@ -187,6 +187,7 @@ program.action(async () => {
 });
 
 program.parseAsync(process.argv).catch((err) => {
-  console.error(`\x1b[31mError: ${err.message}\x1b[0m`);
+  const { error } = require('../lib/utils/colors');
+  error(err.message);
   process.exit(1);
 });
