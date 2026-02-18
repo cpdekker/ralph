@@ -145,3 +145,66 @@ append_guardrail() {
 stage_ralph_memory() {
     git add .ralph/progress.txt .ralph/guardrails.md .ralph/AGENTS.md 2>/dev/null || true
 }
+
+# persist_iteration_log() — Persist minimal iteration log to .ralph/logs/ (always, regardless of insights)
+persist_iteration_log() {
+    local log_file=$1
+    local iteration_num=$2
+    local phase_display=$3
+    local exit_code=$4
+    local turn_start=$5
+    local start_sha=${6:-""}
+
+    local now=$(date +%s)
+    local duration=$((now - turn_start))
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
+
+    # Git-based metrics
+    local files_changed=0
+    local commits=0
+    local code_files=0
+    local ralph_files=0
+    local modified_files=""
+    if [ -n "$start_sha" ]; then
+        modified_files=$(git diff --name-only "$start_sha" HEAD 2>/dev/null || echo "")
+        files_changed=$(echo "$modified_files" | grep -c '.' 2>/dev/null || echo 0)
+        commits=$(git log --oneline "$start_sha"..HEAD 2>/dev/null | wc -l | tr -d ' ')
+        code_files=$(echo "$modified_files" | grep -v '^\\.ralph/' | grep -c '.' 2>/dev/null || echo 0)
+        ralph_files=$(echo "$modified_files" | grep '^\\.ralph/' | grep -c '.' 2>/dev/null || echo 0)
+    fi
+
+    # Token/cost from stream-json result line
+    local result_line=$(grep '"type":"result"' "$log_file" 2>/dev/null | tail -1)
+    local input_tokens=0 output_tokens=0 cost_usd=0
+    if [ -n "$result_line" ]; then
+        input_tokens=$(echo "$result_line" | sed -n 's/.*"input_tokens":\([0-9]*\).*/\1/p')
+        output_tokens=$(echo "$result_line" | sed -n 's/.*"output_tokens":\([0-9]*\).*/\1/p')
+        cost_usd=$(echo "$result_line" | sed -n 's/.*"total_cost_usd":\([0-9.]*\).*/\1/p')
+        input_tokens=${input_tokens:-0}; output_tokens=${output_tokens:-0}; cost_usd=${cost_usd:-0}
+    fi
+
+    local PERSISTENT_LOG_DIR="./.ralph/logs"
+    mkdir -p "$PERSISTENT_LOG_DIR"
+
+    local output_file="$PERSISTENT_LOG_DIR/${SPEC_NAME}_iter_${iteration_num}.json"
+    cat > "$output_file" << EOF
+{
+  "timestamp": "$timestamp",
+  "spec_name": "$SPEC_NAME",
+  "phase": "$phase_name",
+  "iteration": $iteration_num,
+  "exit_code": ${exit_code:-0},
+  "duration_seconds": $duration,
+  "files_modified": $files_changed,
+  "code_files_modified": $code_files,
+  "ralph_files_modified": $ralph_files,
+  "git_commits": $commits,
+  "input_tokens": $input_tokens,
+  "output_tokens": $output_tokens,
+  "cost_usd": $cost_usd
+}
+EOF
+    # Stage for git
+    git add "$output_file" 2>/dev/null || true
+}

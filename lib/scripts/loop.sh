@@ -14,7 +14,7 @@
 #   ./loop.sh my-feature spec               # Spec mode: research→draft→refine→review→signoff
 #
 # Full mode options (via environment variables):
-#   FULL_PLAN_ITERS=5       # Plan iterations per cycle (default: 5)
+#   FULL_PLAN_ITERS=3       # Plan iterations per cycle (default: 3)
 #   FULL_BUILD_ITERS=10     # Build iterations per cycle (default: 10)
 #   FULL_REVIEW_ITERS=25    # Review iterations per cycle (default: 25)
 #   FULL_REVIEWFIX_ITERS=5  # Review-fix iterations per cycle (default: 5)
@@ -151,7 +151,7 @@ elif [ "$MODE" = "insights" ]; then
 elif [ "$MODE" = "full" ]; then
     # Full mode: cycles of plan → build → review → completion check
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
-    FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-5}
+    FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-3}
     FULL_BUILD_ITERS=${FULL_BUILD_ITERS:-10}
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
@@ -965,6 +965,69 @@ run_insights_github_issues() {
     return 0
 }
 
+# Persist minimal iteration log to .ralph/logs/ (always, regardless of insights setting)
+persist_iteration_log() {
+    local log_file=$1
+    local iteration_num=$2
+    local phase_display=$3
+    local exit_code=$4
+    local turn_start=$5
+    local start_sha=${6:-""}
+
+    local now=$(date +%s)
+    local duration=$((now - turn_start))
+    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
+
+    # Git-based metrics
+    local files_changed=0
+    local commits=0
+    local code_files=0
+    local ralph_files=0
+    local modified_files=""
+    if [ -n "$start_sha" ]; then
+        modified_files=$(git diff --name-only "$start_sha" HEAD 2>/dev/null || echo "")
+        files_changed=$(echo "$modified_files" | grep -c '.' 2>/dev/null || echo 0)
+        commits=$(git log --oneline "$start_sha"..HEAD 2>/dev/null | wc -l | tr -d ' ')
+        code_files=$(echo "$modified_files" | grep -v '^\\.ralph/' | grep -c '.' 2>/dev/null || echo 0)
+        ralph_files=$(echo "$modified_files" | grep '^\\.ralph/' | grep -c '.' 2>/dev/null || echo 0)
+    fi
+
+    # Token/cost from stream-json result line
+    local result_line=$(grep '"type":"result"' "$log_file" 2>/dev/null | tail -1)
+    local input_tokens=0 output_tokens=0 cost_usd=0
+    if [ -n "$result_line" ]; then
+        input_tokens=$(echo "$result_line" | sed -n 's/.*"input_tokens":\([0-9]*\).*/\1/p')
+        output_tokens=$(echo "$result_line" | sed -n 's/.*"output_tokens":\([0-9]*\).*/\1/p')
+        cost_usd=$(echo "$result_line" | sed -n 's/.*"total_cost_usd":\([0-9.]*\).*/\1/p')
+        input_tokens=${input_tokens:-0}; output_tokens=${output_tokens:-0}; cost_usd=${cost_usd:-0}
+    fi
+
+    local PERSISTENT_LOG_DIR="./.ralph/logs"
+    mkdir -p "$PERSISTENT_LOG_DIR"
+
+    local output_file="$PERSISTENT_LOG_DIR/${SPEC_NAME}_iter_${iteration_num}.json"
+    cat > "$output_file" << EOF
+{
+  "timestamp": "$timestamp",
+  "spec_name": "$SPEC_NAME",
+  "phase": "$phase_name",
+  "iteration": $iteration_num,
+  "exit_code": ${exit_code:-0},
+  "duration_seconds": $duration,
+  "files_modified": $files_changed,
+  "code_files_modified": $code_files,
+  "ralph_files_modified": $ralph_files,
+  "git_commits": $commits,
+  "input_tokens": $input_tokens,
+  "output_tokens": $output_tokens,
+  "cost_usd": $cost_usd
+}
+EOF
+    # Stage for git
+    git add "$output_file" 2>/dev/null || true
+}
+
 # Helper function to run a single iteration with a given prompt
 run_single_iteration() {
     local prompt_file=$1
@@ -1030,6 +1093,9 @@ run_single_iteration() {
 
     # Capture iteration summary for insights
     capture_iteration_summary "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME" "$TURN_START_SHA"
+
+    # Persist iteration log to .ralph/logs/ (always, regardless of insights)
+    persist_iteration_log "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME" "$TURN_START_SHA"
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then
@@ -2034,34 +2100,73 @@ if [ "$MODE" = "full" ]; then
         fi
 
         print_cycle_banner $CYCLE
-        
+
+        # ─────────────────────────────────────────────────────────────────────
+        # CYCLE RESTART GATE — skip PLAN when plan exists with unchecked items
+        # ─────────────────────────────────────────────────────────────────────
+        SKIP_PLAN=false
+        if [ $CYCLE -gt 1 ]; then
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
+                if [ "$UNCHECKED_COUNT" -gt 0 ]; then
+                    echo -e "  \033[1;34mℹ\033[0m  Plan exists with $UNCHECKED_COUNT unchecked items — skipping PLAN, resuming BUILD"
+                    SKIP_PLAN=true
+                fi
+            fi
+        fi
+
+        if [ "$SKIP_PLAN" = false ]; then
         # ─────────────────────────────────────────────────────────────────────
         # PLAN PHASE
         # ─────────────────────────────────────────────────────────────────────
-        print_phase_banner "PLAN" $FULL_PLAN_ITERS
-        
+
+        # Cycle-aware scaling: cycle 1 gets full budget, subsequent cycles get 2
+        if [ $CYCLE -eq 1 ]; then
+            EFFECTIVE_PLAN_ITERS=$FULL_PLAN_ITERS
+        else
+            EFFECTIVE_PLAN_ITERS=2
+        fi
+
+        print_phase_banner "PLAN" $EFFECTIVE_PLAN_ITERS
+
         PLAN_ITERATION=0
+        PLAN_PREV_HASH=""
         PHASE_ERROR=false
-        while [ $PLAN_ITERATION -lt $FULL_PLAN_ITERS ]; do
+        while [ $PLAN_ITERATION -lt $EFFECTIVE_PLAN_ITERS ]; do
             PLAN_ITERATION=$((PLAN_ITERATION + 1))
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
-            
-            if ! run_single_iteration "$(resolve_prompt plan.md)" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$FULL_PLAN_ITERS)"; then
+
+            # Plan stability detection: if plan hash unchanged, exit early
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
+                    echo -e "  \033[1;34mℹ\033[0m  Plan stabilized (no changes) — exiting PLAN early"
+                    break
+                fi
+            fi
+
+            if ! run_single_iteration "$(resolve_prompt plan.md)" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$EFFECTIVE_PLAN_ITERS)"; then
                 echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
                 if check_circuit_breaker; then
                     PHASE_ERROR=true
                     break
                 fi
             fi
-            
+
+            # Update plan hash after iteration
+            if [ -f "$PLAN_FILE" ]; then
+                PLAN_PREV_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+            fi
+
             # Show progress
-            PLAN_FILE="./.ralph/implementation_plan.md"
             if [ -f "$PLAN_FILE" ]; then
                 UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 echo -e "  \033[1;34mℹ\033[0m  Implementation plan has $UNCHECKED_COUNT items"
             fi
         done
-        
+
         # Exit full mode on error
         if [ "$PHASE_ERROR" = true ]; then
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
@@ -2069,8 +2174,10 @@ if [ "$MODE" = "full" ]; then
             echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
             break
         fi
-        
+
         echo -e "  \033[1;32m✓\033[0m Plan phase complete ($PLAN_ITERATION iterations)"
+
+        fi  # end SKIP_PLAN
 
         run_insights_analysis "plan"
 

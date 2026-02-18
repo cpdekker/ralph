@@ -17,6 +17,7 @@ run_single_iteration() {
     local phase_name=$3
 
     TURN_START_TIME=$(date +%s)
+    TURN_START_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
 
     # Display turn banner
     print_turn_banner $iteration_num
@@ -45,7 +46,10 @@ run_single_iteration() {
             return 1
         else
             CONSECUTIVE_FAILURES=0  # Reset on success
-            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
+            local turn_duration=$(($(date +%s) - TURN_START_TIME))
+            local code_f=$(git diff --name-only HEAD~1 2>/dev/null | grep -v '^\\.ralph/' | wc -l | tr -d ' ')
+            local ralph_f=$(git diff --name-only HEAD~1 2>/dev/null | grep '^\\.ralph/' | wc -l | tr -d ' ')
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num code_files=$code_f ralph_files=$ralph_f duration=${turn_duration}s"
         fi
     else
         cat "$prompt_file" | claude -p \
@@ -68,12 +72,18 @@ run_single_iteration() {
         else
             echo -e "  ${C_SUCCESS}✓${C_RESET} Claude iteration completed"
             CONSECUTIVE_FAILURES=0  # Reset on success
-            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num"
+            local turn_duration=$(($(date +%s) - TURN_START_TIME))
+            local code_f=$(git diff --name-only HEAD~1 2>/dev/null | grep -v '^\\.ralph/' | wc -l | tr -d ' ')
+            local ralph_f=$(git diff --name-only HEAD~1 2>/dev/null | grep '^\\.ralph/' | wc -l | tr -d ' ')
+            append_progress "iteration_success" "phase=$phase_name iter=$iteration_num code_files=$code_f ralph_files=$ralph_f duration=${turn_duration}s"
         fi
     fi
 
     # Generate and display summary
     generate_summary "$LOG_FILE" "$iteration_num" "$TURN_START_TIME"
+
+    # Persist iteration log to .ralph/logs/ (always, regardless of insights)
+    persist_iteration_log "$LOG_FILE" "$iteration_num" "$phase_name" "$CLAUDE_EXIT" "$TURN_START_TIME" "$TURN_START_SHA"
 
     # Skip commit/push in debug mode
     if [ "${NO_COMMIT:-false}" = true ]; then

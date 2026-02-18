@@ -76,17 +76,52 @@ run_full_mode() {
         print_cycle_banner $CYCLE
 
         # ─────────────────────────────────────────────────────────────────────
+        # CYCLE RESTART GATE — skip PLAN when plan exists with unchecked items
+        # ─────────────────────────────────────────────────────────────────────
+        SKIP_PLAN=false
+        if [ $CYCLE -gt 1 ]; then
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
+                if [ "$UNCHECKED_COUNT" -gt 0 ]; then
+                    echo -e "  ${C_API}ℹ${C_RESET}  Plan exists with $UNCHECKED_COUNT unchecked items — skipping PLAN, resuming BUILD"
+                    SKIP_PLAN=true
+                fi
+            fi
+        fi
+
+        if [ "$SKIP_PLAN" = false ]; then
+        # ─────────────────────────────────────────────────────────────────────
         # PLAN PHASE
         # ─────────────────────────────────────────────────────────────────────
-        print_phase_banner "PLAN" $FULL_PLAN_ITERS
+
+        # Cycle-aware scaling: cycle 1 gets full budget, subsequent cycles get 2
+        if [ $CYCLE -eq 1 ]; then
+            EFFECTIVE_PLAN_ITERS=$FULL_PLAN_ITERS
+        else
+            EFFECTIVE_PLAN_ITERS=2
+        fi
+
+        print_phase_banner "PLAN" $EFFECTIVE_PLAN_ITERS
 
         PLAN_ITERATION=0
+        PLAN_PREV_HASH=""
         PHASE_ERROR=false
-        while [ $PLAN_ITERATION -lt $FULL_PLAN_ITERS ]; do
+        while [ $PLAN_ITERATION -lt $EFFECTIVE_PLAN_ITERS ]; do
             PLAN_ITERATION=$((PLAN_ITERATION + 1))
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-            if ! run_single_iteration "./.ralph/prompts/plan.md" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$FULL_PLAN_ITERS)"; then
+            # Plan stability detection: if plan hash unchanged, exit early
+            PLAN_FILE="./.ralph/implementation_plan.md"
+            if [ -f "$PLAN_FILE" ]; then
+                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
+                    echo -e "  ${C_API}ℹ${C_RESET}  Plan stabilized (no changes) — exiting PLAN early"
+                    break
+                fi
+            fi
+
+            if ! run_single_iteration "./.ralph/prompts/plan.md" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$EFFECTIVE_PLAN_ITERS)"; then
                 echo -e "  ${C_ERROR}✗${C_RESET} Claude error - checking circuit breaker"
                 if check_circuit_breaker; then
                     PHASE_ERROR=true
@@ -94,8 +129,12 @@ run_full_mode() {
                 fi
             fi
 
+            # Update plan hash after iteration
+            if [ -f "$PLAN_FILE" ]; then
+                PLAN_PREV_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+            fi
+
             # Show progress
-            PLAN_FILE="./.ralph/implementation_plan.md"
             if [ -f "$PLAN_FILE" ]; then
                 UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 echo -e "  ${C_API}ℹ${C_RESET}  Implementation plan has $UNCHECKED_COUNT items"
@@ -110,6 +149,8 @@ run_full_mode() {
         fi
 
         echo -e "  ${C_SUCCESS}✓${C_RESET} Plan phase complete ($PLAN_ITERATION iterations)"
+
+        fi  # end SKIP_PLAN
 
         # ─────────────────────────────────────────────────────────────────────
         # BUILD PHASE
