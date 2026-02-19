@@ -1149,47 +1149,42 @@ get_next_review_specialist() {
 # Returns space-separated list of specialist types with unchecked items
 get_all_remaining_specialists() {
     local checklist_file="./.ralph/review_checklist.md"
-    local specialists=""
 
     if [ ! -f "$checklist_file" ]; then
         echo "qa"
         return
     fi
 
-    # Check each specialist type for unchecked items
-    if grep -q '^\- \[ \].*\[SEC' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists security"
-    fi
-    if grep -q '^\- \[ \].*\[UX\]' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists ux"
-    fi
-    if grep -q '^\- \[ \].*\[DB\]' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists db"
-    fi
-    if grep -q '^\- \[ \].*\[PERF\]' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists perf"
-    fi
-    if grep -q '^\- \[ \].*\[API\]' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists api"
-    fi
-    if grep -q '^\- \[ \].*\[ANTAG' "$checklist_file" 2>/dev/null; then
-        specialists="$specialists antagonist"
-    fi
-    # QA covers untagged items — check for unchecked items that don't match any known tag
+    # Count unchecked items per specialist type
+    local sec_count=$(grep -c '^\- \[ \].*\[SEC' "$checklist_file" 2>/dev/null) || sec_count=0
+    local ux_count=$(grep -c '^\- \[ \].*\[UX\]' "$checklist_file" 2>/dev/null) || ux_count=0
+    local db_count=$(grep -c '^\- \[ \].*\[DB\]' "$checklist_file" 2>/dev/null) || db_count=0
+    local perf_count=$(grep -c '^\- \[ \].*\[PERF\]' "$checklist_file" 2>/dev/null) || perf_count=0
+    local api_count=$(grep -c '^\- \[ \].*\[API\]' "$checklist_file" 2>/dev/null) || api_count=0
+    local antag_count=$(grep -c '^\- \[ \].*\[ANTAG' "$checklist_file" 2>/dev/null) || antag_count=0
+
+    # QA covers untagged items
     local total_unchecked=$(grep -c '^\- \[ \]' "$checklist_file" 2>/dev/null) || total_unchecked=0
-    local tagged_unchecked=0
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[SEC' "$checklist_file" 2>/dev/null || echo 0)))
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[UX\]' "$checklist_file" 2>/dev/null || echo 0)))
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[DB\]' "$checklist_file" 2>/dev/null || echo 0)))
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[PERF\]' "$checklist_file" 2>/dev/null || echo 0)))
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[API\]' "$checklist_file" 2>/dev/null || echo 0)))
-    tagged_unchecked=$((tagged_unchecked + $(grep -c '^\- \[ \].*\[ANTAG' "$checklist_file" 2>/dev/null || echo 0)))
-    if [ $((total_unchecked - tagged_unchecked)) -gt 0 ]; then
-        specialists="$specialists qa"
+    local tagged_unchecked=$((sec_count + ux_count + db_count + perf_count + api_count + antag_count))
+    local qa_count=$((total_unchecked - tagged_unchecked))
+
+    # Build list of specialists with counts, then sort by count descending
+    # This ensures specialists with the most remaining items get picked first
+    local sorted=""
+    [ $sec_count -gt 0 ] && sorted="${sorted}${sec_count} security\n"
+    [ $ux_count -gt 0 ] && sorted="${sorted}${ux_count} ux\n"
+    [ $db_count -gt 0 ] && sorted="${sorted}${db_count} db\n"
+    [ $perf_count -gt 0 ] && sorted="${sorted}${perf_count} perf\n"
+    [ $api_count -gt 0 ] && sorted="${sorted}${api_count} api\n"
+    [ $antag_count -gt 0 ] && sorted="${sorted}${antag_count} antagonist\n"
+    [ $qa_count -gt 0 ] && sorted="${sorted}${qa_count} qa\n"
+
+    if [ -z "$sorted" ]; then
+        return
     fi
 
-    # Trim leading space
-    echo "$specialists" | sed 's/^ *//'
+    # Sort numerically descending by count, then extract just the specialist names
+    echo -e "$sorted" | sort -rn | awk '{print $2}' | tr '\n' ' ' | sed 's/ $//'
 }
 
 # Merge parallel review outputs back into main files
@@ -1352,11 +1347,12 @@ run_parallel_review() {
             return 2  # Signal caller to use sequential fallback
         fi
 
-        # Create combined prompt: wrapper + specialist
+        # Create combined prompt: specialist first, wrapper last
+        # Wrapper contains isolation rules that MUST be the final authoritative instructions
         local temp_prompt="$TEMP_DIR/parallel_${spec_type}.md"
-        # Replace SPECIALIST placeholder in wrapper with actual type name
-        sed "s/SPECIALIST/${spec_type}/g" "$wrapper_prompt" > "$temp_prompt"
-        cat "$specialist_prompt" >> "$temp_prompt"
+        cat "$specialist_prompt" > "$temp_prompt"
+        # Replace SPECIALIST placeholder in wrapper and append as final instructions
+        sed "s/SPECIALIST/${spec_type}/g" "$wrapper_prompt" >> "$temp_prompt"
 
         local log_file="$TEMP_DIR/parallel_${spec_type}.log"
 
@@ -2053,7 +2049,7 @@ if [ "$MODE" = "full" ]; then
             echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
             echo -e "\033[1;33m  ⚠ LARGE SPEC DETECTED ($SPEC_LINE_COUNT lines)\033[0m"
             echo -e "\033[1;33m  Consider running decompose mode first for better results:\033[0m"
-            echo -e "\033[1;33m    node .ralph/run.js $SPEC_NAME decompose\033[0m"
+            echo -e "\033[1;33m    ralph $SPEC_NAME decompose\033[0m"
             echo -e "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
             echo ""
         fi
@@ -2255,6 +2251,8 @@ if [ "$MODE" = "full" ]; then
         
         REVIEW_ITERATION=0
         PHASE_ERROR=false
+        PREV_UNCHECKED=-1
+        STALE_ROUNDS=0
 
         if [ "${PARALLEL_REVIEW:-true}" = "true" ]; then
             # ── PARALLEL REVIEW MODE ──
@@ -2272,6 +2270,18 @@ if [ "$MODE" = "full" ]; then
                         break
                     fi
 
+                    # Stale-progress detection: break if no items resolved for 2 consecutive rounds
+                    if [ "$UNCHECKED_COUNT" -eq "$PREV_UNCHECKED" ]; then
+                        STALE_ROUNDS=$((STALE_ROUNDS + 1))
+                        if [ $STALE_ROUNDS -ge 2 ]; then
+                            echo -e "  \033[1;33m⚠\033[0m  No progress for $STALE_ROUNDS consecutive rounds ($UNCHECKED_COUNT items stuck) — breaking review loop"
+                            break
+                        fi
+                    else
+                        STALE_ROUNDS=0
+                    fi
+                    PREV_UNCHECKED=$UNCHECKED_COUNT
+
                     # Count items by specialist type
                     SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
                     UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
@@ -2284,7 +2294,7 @@ if [ "$MODE" = "full" ]; then
                 fi
 
                 run_parallel_review
-                local parallel_exit=$?
+                parallel_exit=$?
 
                 if [ $parallel_exit -eq 2 ]; then
                     # Wrapper not found — fall back to sequential for rest of this cycle
@@ -2491,7 +2501,7 @@ if [ "$MODE" = "full" ]; then
         # ─────────────────────────────────────────────────────────────────────
         if run_completion_check; then
             # Write completion marker for parallel orchestrator detection
-            local completion_marker="./.ralph/sub_spec_complete.json"
+            completion_marker="./.ralph/sub_spec_complete.json"
             echo "{\"complete\": true, \"spec\": \"${SPEC_NAME}\", \"subspec\": \"${RALPH_SUBSPEC_NAME:-none}\", \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$completion_marker"
 
             if [ "$IS_DECOMPOSED" = true ]; then
@@ -2534,6 +2544,8 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 # STANDARD MODE - Runs single mode (plan, build, review, review-fix, or debug)
 # ═══════════════════════════════════════════════════════════════════════════════
+PREV_UNCHECKED_STD=-1
+STALE_ROUNDS_STD=0
 
 while true; do
     ITERATION=$((ITERATION + 1))
@@ -2578,6 +2590,18 @@ while true; do
                 break
             fi
 
+            # Stale-progress detection: break if no items resolved for 2 consecutive rounds
+            if [ "$UNCHECKED_COUNT" -eq "$PREV_UNCHECKED_STD" ]; then
+                STALE_ROUNDS_STD=$((STALE_ROUNDS_STD + 1))
+                if [ $STALE_ROUNDS_STD -ge 2 ]; then
+                    echo -e "  \033[1;33m⚠\033[0m  No progress for $STALE_ROUNDS_STD consecutive rounds ($UNCHECKED_COUNT items stuck) — breaking review loop"
+                    break
+                fi
+            else
+                STALE_ROUNDS_STD=0
+            fi
+            PREV_UNCHECKED_STD=$UNCHECKED_COUNT
+
             # Count items by specialist type
             SEC_COUNT=$(grep -c '^\- \[ \].*\[SEC' "$CHECKLIST_FILE" 2>/dev/null) || SEC_COUNT=0
             UX_COUNT=$(grep -c '^\- \[ \].*\[UX\]' "$CHECKLIST_FILE" 2>/dev/null) || UX_COUNT=0
@@ -2591,7 +2615,7 @@ while true; do
             if [ "${PARALLEL_REVIEW:-true}" = "true" ]; then
                 # Parallel review mode — run all specialists simultaneously
                 run_parallel_review
-                local parallel_exit=$?
+                parallel_exit=$?
                 if [ $parallel_exit -eq 2 ]; then
                     # Wrapper not found — fall through to sequential
                     :
