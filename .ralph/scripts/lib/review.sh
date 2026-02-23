@@ -63,7 +63,19 @@ run_completion_check() {
         json_text="$check_result"
     fi
 
+    # Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+    json_text=$(echo "$json_text" | sed '/^```/d')
+
     local is_complete=$(echo "$json_text" | jq -r '.complete // false' 2>/dev/null)
+
+    # Fallback: if jq failed to extract, try grep for "complete": true
+    if [ -z "$is_complete" ] || [ "$is_complete" = "null" ]; then
+        if echo "$json_text" | grep -q '"complete"[[:space:]]*:[[:space:]]*true'; then
+            is_complete="true"
+        else
+            is_complete="false"
+        fi
+    fi
     local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
     local reason=$(echo "$json_text" | jq -r '.reason // empty' 2>/dev/null)
 

@@ -23,7 +23,7 @@ Analyze whether all requirements from the spec have been implemented and the rev
 
 ## Evaluation Criteria
 
-### For COMPLETE status (confidence ≥ 0.90)
+### For COMPLETE status (confidence ≥ 0.80)
 
 ALL of the following must be true:
 
@@ -34,20 +34,28 @@ ALL of the following must be true:
 5. **No [BLOCKED] items** - No items are marked as blocked in the implementation plan
 6. **No unresolved guardrail issues** - If `guardrails.md` has "Known Issues" entries, verify they've been addressed or are out of scope
 
-### For HIGH CONFIDENCE (0.80 - 0.89)
+### For HIGH CONFIDENCE (0.90 - 0.94)
 
-Most requirements are met with minor items remaining:
+All requirements implemented, minor review items remain:
 
 - Core functionality is complete
 - Only `[QA-MINOR]` or `💡 CONSIDER` issues remain
 - All critical paths are tested
 
+### For MODERATE CONFIDENCE (0.80 - 0.89)
+
+All requirements implemented, some attention items remain:
+
+- Core functionality is complete
+- Some `⚠️ NEEDS ATTENTION` issues remain but no `❌ BLOCKING`
+- These are listed as caveats, not blockers
+
 ### For MEDIUM CONFIDENCE (0.60 - 0.79)
 
 Significant progress but gaps remain:
 
-- Most requirements implemented
-- Some `⚠️ NEEDS ATTENTION` issues remain
+- Some requirements not yet implemented
+- `❌ BLOCKING` issues may be present
 - Test coverage could be improved
 
 ### For LOW CONFIDENCE (< 0.60)
@@ -151,9 +159,11 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
 |------------|-----------|--------|
 | ≥ 0.95 | true | Ready for production |
 | 0.90 - 0.94 | true | Ready with minor caveats |
-| 0.80 - 0.89 | false | One more review-fix cycle recommended |
+| 0.80 - 0.89 | true | Complete — remaining items are minor |
 | 0.60 - 0.79 | false | Continue build phase |
 | < 0.60 | false | May need plan refinement |
+
+**Key rule**: If all plan items are `[x]` and no `❌ BLOCKING` issues exist, confidence MUST be ≥ 0.80 and `complete` MUST be `true`. Minor `⚠️ NEEDS ATTENTION` or `💡 CONSIDER` items do not block completion — list them as caveats instead.
 
 ---
 

@@ -76,7 +76,7 @@ run_full_mode() {
         print_cycle_banner $CYCLE
 
         # ─────────────────────────────────────────────────────────────────────
-        # CYCLE RESTART GATE — skip PLAN when plan exists with unchecked items
+        # CYCLE RESTART GATE — skip PLAN when plan exists (complete or not)
         # ─────────────────────────────────────────────────────────────────────
         SKIP_PLAN=false
         if [ $CYCLE -gt 1 ]; then
@@ -85,8 +85,10 @@ run_full_mode() {
                 UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 if [ "$UNCHECKED_COUNT" -gt 0 ]; then
                     echo -e "  ${C_API}ℹ${C_RESET}  Plan exists with $UNCHECKED_COUNT unchecked items — skipping PLAN, resuming BUILD"
-                    SKIP_PLAN=true
+                else
+                    echo -e "  ${C_API}ℹ${C_RESET}  Plan fully checked — skipping PLAN and BUILD"
                 fi
+                SKIP_PLAN=true
             fi
         fi
 
@@ -153,73 +155,94 @@ run_full_mode() {
         fi  # end SKIP_PLAN
 
         # ─────────────────────────────────────────────────────────────────────
-        # BUILD PHASE
+        # BUILD PHASE (skip if plan fully complete on cycle 2+)
         # ─────────────────────────────────────────────────────────────────────
-        print_phase_banner "BUILD" $FULL_BUILD_ITERS
-
-        BUILD_ITERATION=0
-        PHASE_ERROR=false
-        while [ $BUILD_ITERATION -lt $FULL_BUILD_ITERS ]; do
-            BUILD_ITERATION=$((BUILD_ITERATION + 1))
-            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
-
-            # Check if build is complete before running
+        SKIP_BUILD=false
+        if [ $CYCLE -gt 1 ]; then
             PLAN_FILE="./.ralph/implementation_plan.md"
             if [ -f "$PLAN_FILE" ]; then
                 UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
                 if [ "$UNCHECKED_COUNT" -eq 0 ]; then
-                    echo -e "  ${C_SUCCESS}✓${C_RESET} All build tasks complete!"
-                    break
-                fi
-                echo -e "  ${C_API}ℹ${C_RESET}  $UNCHECKED_COUNT unchecked items remaining"
-            fi
-
-            if ! run_single_iteration "./.ralph/prompts/build.md" $TOTAL_ITERATIONS "BUILD ($BUILD_ITERATION/$FULL_BUILD_ITERS)"; then
-                echo -e "  ${C_ERROR}✗${C_RESET} Claude error - checking circuit breaker"
-                if check_circuit_breaker; then
-                    PHASE_ERROR=true
-                    break
+                    SKIP_BUILD=true
                 fi
             fi
-        done
-
-        if [ "$PHASE_ERROR" = true ]; then
-            echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
-            echo -e "${C_ERROR}  ❌ Full mode stopped due to circuit breaker${C_RESET}"
-            echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
-            break
         fi
 
-        echo -e "  ${C_SUCCESS}✓${C_RESET} Build phase complete"
+        if [ "$SKIP_BUILD" = true ]; then
+            echo -e "  ${C_SUCCESS}✓${C_RESET} All build tasks already complete — skipping BUILD"
+        else
+            print_phase_banner "BUILD" $FULL_BUILD_ITERS
+
+            BUILD_ITERATION=0
+            PHASE_ERROR=false
+            while [ $BUILD_ITERATION -lt $FULL_BUILD_ITERS ]; do
+                BUILD_ITERATION=$((BUILD_ITERATION + 1))
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                # Check if build is complete before running
+                PLAN_FILE="./.ralph/implementation_plan.md"
+                if [ -f "$PLAN_FILE" ]; then
+                    UNCHECKED_COUNT=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || UNCHECKED_COUNT=0
+                    if [ "$UNCHECKED_COUNT" -eq 0 ]; then
+                        echo -e "  ${C_SUCCESS}✓${C_RESET} All build tasks complete!"
+                        break
+                    fi
+                    echo -e "  ${C_API}ℹ${C_RESET}  $UNCHECKED_COUNT unchecked items remaining"
+                fi
+
+                if ! run_single_iteration "./.ralph/prompts/build.md" $TOTAL_ITERATIONS "BUILD ($BUILD_ITERATION/$FULL_BUILD_ITERS)"; then
+                    echo -e "  ${C_ERROR}✗${C_RESET} Claude error - checking circuit breaker"
+                    if check_circuit_breaker; then
+                        PHASE_ERROR=true
+                        break
+                    fi
+                fi
+            done
+
+            if [ "$PHASE_ERROR" = true ]; then
+                echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
+                echo -e "${C_ERROR}  ❌ Full mode stopped due to circuit breaker${C_RESET}"
+                echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
+                break
+            fi
+
+            echo -e "  ${C_SUCCESS}✓${C_RESET} Build phase complete"
+        fi
 
         # ─────────────────────────────────────────────────────────────────────
-        # REVIEW PHASE (with setup on first iteration of each cycle)
+        # REVIEW PHASE (setup only on first cycle or when checklist missing)
         # ─────────────────────────────────────────────────────────────────────
         print_phase_banner "REVIEW" $FULL_REVIEW_ITERS
 
-        # Run review setup
-        echo -e "  ${C_ACCENT}⚙${C_RESET}  Running review setup..."
-        SETUP_LOG_FILE="$TEMP_DIR/review_setup_cycle_${CYCLE}.log"
+        # Only run review setup if checklist doesn't exist yet
+        CHECKLIST_FILE="./.ralph/review_checklist.md"
+        if [ ! -f "$CHECKLIST_FILE" ] || [ $CYCLE -eq 1 ]; then
+            echo -e "  ${C_ACCENT}⚙${C_RESET}  Running review setup..."
+            SETUP_LOG_FILE="$TEMP_DIR/review_setup_cycle_${CYCLE}.log"
 
-        if [ "$VERBOSE" = true ]; then
-            cat "./.ralph/prompts/review/setup.md" | claude -p \
-                --dangerously-skip-permissions \
-                --output-format=stream-json \
-                --verbose 2>&1 | tee "$SETUP_LOG_FILE"
+            if [ "$VERBOSE" = true ]; then
+                cat "./.ralph/prompts/review/setup.md" | claude -p \
+                    --dangerously-skip-permissions \
+                    --output-format=stream-json \
+                    --verbose 2>&1 | tee "$SETUP_LOG_FILE"
+            else
+                cat "./.ralph/prompts/review/setup.md" | claude -p \
+                    --dangerously-skip-permissions \
+                    --output-format=stream-json \
+                    --verbose > "$SETUP_LOG_FILE" 2>&1 &
+
+                SETUP_PID=$!
+                spin $SETUP_PID "Running review setup..."
+                wait $SETUP_PID
+            fi
+
+            git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
+            echo -e "  ${C_SUCCESS}✓${C_RESET} Review setup complete"
+            echo ""
         else
-            cat "./.ralph/prompts/review/setup.md" | claude -p \
-                --dangerously-skip-permissions \
-                --output-format=stream-json \
-                --verbose > "$SETUP_LOG_FILE" 2>&1 &
-
-            SETUP_PID=$!
-            spin $SETUP_PID "Running review setup..."
-            wait $SETUP_PID
+            echo -e "  ${C_API}ℹ${C_RESET}  Review checklist exists — reusing from previous cycle"
+            echo ""
         fi
-
-        git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
-        echo -e "  ${C_SUCCESS}✓${C_RESET} Review setup complete"
-        echo ""
 
         REVIEW_ITERATION=0
         PHASE_ERROR=false
@@ -395,9 +418,31 @@ run_full_mode() {
         echo -e "  ${C_SUCCESS}✓${C_RESET} Distill phase complete"
 
         # ─────────────────────────────────────────────────────────────────────
-        # COMPLETION CHECK
+        # COMPLETION CHECK (fast path + Claude verification)
         # ─────────────────────────────────────────────────────────────────────
-        if run_completion_check; then
+
+        # Fast path: if plan is fully checked and no blocking review issues, complete
+        FAST_COMPLETE=false
+        PLAN_FILE="./.ralph/implementation_plan.md"
+        REVIEW_FILE="./.ralph/review.md"
+        if [ -f "$PLAN_FILE" ]; then
+            PLAN_UNCHECKED=$(grep -c '\- \[ \]' "$PLAN_FILE" 2>/dev/null) || PLAN_UNCHECKED=0
+            PLAN_BLOCKED=$(grep -c '\[BLOCKED\]' "$PLAN_FILE" 2>/dev/null) || PLAN_BLOCKED=0
+            REVIEW_BLOCKING=0
+            if [ -f "$REVIEW_FILE" ]; then
+                REVIEW_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || REVIEW_BLOCKING=0
+            fi
+            if [ "$PLAN_UNCHECKED" -eq 0 ] && [ "$PLAN_BLOCKED" -eq 0 ] && [ "$REVIEW_BLOCKING" -eq 0 ]; then
+                FAST_COMPLETE=true
+                echo ""
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                echo -e "${C_SUCCESS}  ✅ FAST COMPLETION — All plan items done, no blocking issues${C_RESET}"
+                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                echo ""
+            fi
+        fi
+
+        if [ "$FAST_COMPLETE" = true ] || run_completion_check; then
             if [ "$IS_DECOMPOSED" = true ]; then
                 mark_subspec_complete
                 echo -e "  ${C_ACCENT}→${C_RESET} Sub-spec complete. Selecting next sub-spec..."
