@@ -24,6 +24,10 @@
 #   PARALLEL_REVIEW=true        # Enable parallel review specialists (default: true)
 #   PARALLEL_REVIEW_MAX=4       # Max concurrent Claude review processes (default: 4)
 #
+# Build quality gate (via environment variables):
+#   RALPH_BUILD_GATE=""         # Shell command that must pass before REVIEW (default: empty, gate skipped)
+#   RALPH_BUILD_GATE_RETRIES=3  # Extra BUILD iterations if gate fails (default: 3)
+#
 # Circuit breaker settings (via environment variables):
 #   MAX_CONSECUTIVE_FAILURES=3  # Stop after N consecutive failures (default: 3)
 
@@ -156,6 +160,8 @@ elif [ "$MODE" = "full" ]; then
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
     FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}  # Distill iterations per cycle
+    RALPH_BUILD_GATE="${RALPH_BUILD_GATE:-}"  # Shell command that must pass before REVIEW
+    RALPH_BUILD_GATE_RETRIES=${RALPH_BUILD_GATE_RETRIES:-3}  # Extra BUILD iterations if gate fails
 else
     MODE="build"
     PROMPT_FILE="$(resolve_prompt build.md)"
@@ -2144,15 +2150,7 @@ if [ "$MODE" = "full" ]; then
             PLAN_ITERATION=$((PLAN_ITERATION + 1))
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-            # Plan stability detection: if plan hash unchanged, exit early
             PLAN_FILE="./.ralph/implementation_plan.md"
-            if [ -f "$PLAN_FILE" ]; then
-                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
-                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
-                    echo -e "  \033[1;34mℹ\033[0m  Plan stabilized (no changes) — exiting PLAN early"
-                    break
-                fi
-            fi
 
             if ! run_single_iteration "$(resolve_prompt plan.md)" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$EFFECTIVE_PLAN_ITERS)"; then
                 echo -e "  \033[1;31m✗\033[0m Claude error - checking circuit breaker"
@@ -2162,9 +2160,14 @@ if [ "$MODE" = "full" ]; then
                 fi
             fi
 
-            # Update plan hash after iteration
+            # Plan stability detection: if plan hash unchanged after iteration, exit early
             if [ -f "$PLAN_FILE" ]; then
-                PLAN_PREV_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
+                    echo -e "  \033[1;34mℹ\033[0m  Plan stabilized (no changes) — exiting PLAN early"
+                    break
+                fi
+                PLAN_PREV_HASH="$PLAN_CURRENT_HASH"
             fi
 
             # Show progress
@@ -2245,6 +2248,50 @@ if [ "$MODE" = "full" ]; then
         fi
 
         run_insights_analysis "build"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # BUILD QUALITY GATE (must pass before transitioning to REVIEW)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ -n "$RALPH_BUILD_GATE" ]; then
+            echo -e "  \033[1;35m⚙\033[0m  Running build quality gate: $RALPH_BUILD_GATE"
+            if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                echo -e "  \033[1;32m✓\033[0m Build gate passed"
+            else
+                echo -e "  \033[1;31m✗\033[0m Build gate failed — running extra BUILD iterations (max $RALPH_BUILD_GATE_RETRIES)"
+                GATE_RETRY=0
+                GATE_PASSED=false
+                while [ $GATE_RETRY -lt $RALPH_BUILD_GATE_RETRIES ]; do
+                    GATE_RETRY=$((GATE_RETRY + 1))
+                    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+                    echo -e "  \033[1;34mℹ\033[0m  Gate retry $GATE_RETRY/$RALPH_BUILD_GATE_RETRIES"
+
+                    if ! run_single_iteration "$(resolve_prompt build.md)" $TOTAL_ITERATIONS "BUILD-GATE ($GATE_RETRY/$RALPH_BUILD_GATE_RETRIES)"; then
+                        echo -e "  \033[1;31m✗\033[0m Claude error during gate retry"
+                        if check_circuit_breaker; then
+                            PHASE_ERROR=true
+                            break
+                        fi
+                    fi
+
+                    if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                        echo -e "  \033[1;32m✓\033[0m Build gate passed after $GATE_RETRY retry(s)"
+                        GATE_PASSED=true
+                        break
+                    fi
+                done
+
+                if [ "$PHASE_ERROR" = true ]; then
+                    echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+                    echo -e "\033[1;31m  ❌ Full mode stopped due to circuit breaker\033[0m"
+                    echo -e "\033[1;31m════════════════════════════════════════════════════════════\033[0m"
+                    break
+                fi
+
+                if [ "$GATE_PASSED" = false ]; then
+                    echo -e "  \033[1;33m⚠\033[0m  Build gate still failing after $RALPH_BUILD_GATE_RETRIES retries — proceeding to REVIEW"
+                fi
+            fi
+        fi
 
         # ─────────────────────────────────────────────────────────────────────
         # REVIEW PHASE (setup only on first cycle or when checklist missing)
@@ -2543,12 +2590,24 @@ if [ "$MODE" = "full" ]; then
                 REVIEW_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || REVIEW_BLOCKING=0
             fi
             if [ "$PLAN_UNCHECKED" -eq 0 ] && [ "$PLAN_BLOCKED" -eq 0 ] && [ "$REVIEW_BLOCKING" -eq 0 ]; then
-                FAST_COMPLETE=true
-                echo ""
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-                echo -e "\033[1;32m  ✅ FAST COMPLETION — All plan items done, no blocking issues\033[0m"
-                echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
-                echo ""
+                # If build gate is set, verify it passes before fast-completing
+                if [ -n "$RALPH_BUILD_GATE" ]; then
+                    if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                        FAST_COMPLETE=true
+                    else
+                        echo -e "  \033[1;33m⚠\033[0m  Fast-complete blocked: build gate failed — falling through to full completion check"
+                    fi
+                else
+                    FAST_COMPLETE=true
+                fi
+
+                if [ "$FAST_COMPLETE" = true ]; then
+                    echo ""
+                    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                    echo -e "\033[1;32m  ✅ FAST COMPLETION — All plan items done, no blocking issues\033[0m"
+                    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+                    echo ""
+                fi
             fi
         fi
 

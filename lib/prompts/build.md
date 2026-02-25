@@ -43,6 +43,7 @@ Look at the complexity tags in the implementation plan:
 3. **Search before implementing** — use subagents to verify the code doesn't already exist
 4. **Implement completely** — no placeholders, no stubs, no "TODO" comments
 5. **Run tests** for the code you changed — fix any failures before proceeding
+   - **Test optimization**: Before running tests, check what files you modified this turn (`git diff --name-only`). If ALL your changes are limited to `.md` or `.txt` files (documentation, plans, status updates), skip test execution entirely — tests validate code, not documentation. Only run tests when you've modified code files (`.ts`, `.js`, `.py`, `.go`, `.sh`, etc.).
 6. **Update `.ralph/implementation_plan.md`** — mark item(s) complete with `[x]`
 7. **Commit and push**:
    ```bash

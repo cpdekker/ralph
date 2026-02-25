@@ -113,15 +113,7 @@ run_full_mode() {
             PLAN_ITERATION=$((PLAN_ITERATION + 1))
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
 
-            # Plan stability detection: if plan hash unchanged, exit early
             PLAN_FILE="./.ralph/implementation_plan.md"
-            if [ -f "$PLAN_FILE" ]; then
-                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
-                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
-                    echo -e "  ${C_API}ℹ${C_RESET}  Plan stabilized (no changes) — exiting PLAN early"
-                    break
-                fi
-            fi
 
             if ! run_single_iteration "./.ralph/prompts/plan.md" $TOTAL_ITERATIONS "PLAN ($PLAN_ITERATION/$EFFECTIVE_PLAN_ITERS)"; then
                 echo -e "  ${C_ERROR}✗${C_RESET} Claude error - checking circuit breaker"
@@ -131,9 +123,14 @@ run_full_mode() {
                 fi
             fi
 
-            # Update plan hash after iteration
+            # Plan stability detection: if plan hash unchanged after iteration, exit early
             if [ -f "$PLAN_FILE" ]; then
-                PLAN_PREV_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                PLAN_CURRENT_HASH=$(md5sum "$PLAN_FILE" 2>/dev/null | cut -d' ' -f1)
+                if [ -n "$PLAN_PREV_HASH" ] && [ "$PLAN_CURRENT_HASH" = "$PLAN_PREV_HASH" ]; then
+                    echo -e "  ${C_API}ℹ${C_RESET}  Plan stabilized (no changes) — exiting PLAN early"
+                    break
+                fi
+                PLAN_PREV_HASH="$PLAN_CURRENT_HASH"
             fi
 
             # Show progress
@@ -207,6 +204,51 @@ run_full_mode() {
             fi
 
             echo -e "  ${C_SUCCESS}✓${C_RESET} Build phase complete"
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # BUILD QUALITY GATE (must pass before transitioning to REVIEW)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ -n "${RALPH_BUILD_GATE:-}" ]; then
+            echo -e "  ${C_ACCENT}⚙${C_RESET}  Running build quality gate: $RALPH_BUILD_GATE"
+            if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                echo -e "  ${C_SUCCESS}✓${C_RESET} Build gate passed"
+            else
+                RALPH_BUILD_GATE_RETRIES=${RALPH_BUILD_GATE_RETRIES:-3}
+                echo -e "  ${C_ERROR}✗${C_RESET} Build gate failed — running extra BUILD iterations (max $RALPH_BUILD_GATE_RETRIES)"
+                GATE_RETRY=0
+                GATE_PASSED=false
+                while [ $GATE_RETRY -lt $RALPH_BUILD_GATE_RETRIES ]; do
+                    GATE_RETRY=$((GATE_RETRY + 1))
+                    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+                    echo -e "  ${C_API}ℹ${C_RESET}  Gate retry $GATE_RETRY/$RALPH_BUILD_GATE_RETRIES"
+
+                    if ! run_single_iteration "./.ralph/prompts/build.md" $TOTAL_ITERATIONS "BUILD-GATE ($GATE_RETRY/$RALPH_BUILD_GATE_RETRIES)"; then
+                        echo -e "  ${C_ERROR}✗${C_RESET} Claude error during gate retry"
+                        if check_circuit_breaker; then
+                            PHASE_ERROR=true
+                            break
+                        fi
+                    fi
+
+                    if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                        echo -e "  ${C_SUCCESS}✓${C_RESET} Build gate passed after $GATE_RETRY retry(s)"
+                        GATE_PASSED=true
+                        break
+                    fi
+                done
+
+                if [ "$PHASE_ERROR" = true ]; then
+                    echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
+                    echo -e "${C_ERROR}  ❌ Full mode stopped due to circuit breaker${C_RESET}"
+                    echo -e "${C_ERROR}════════════════════════════════════════════════════════════${C_RESET}"
+                    break
+                fi
+
+                if [ "$GATE_PASSED" = false ]; then
+                    echo -e "  ${C_WARNING}⚠${C_RESET}  Build gate still failing after $RALPH_BUILD_GATE_RETRIES retries — proceeding to REVIEW"
+                fi
+            fi
         fi
 
         # ─────────────────────────────────────────────────────────────────────
@@ -433,12 +475,24 @@ run_full_mode() {
                 REVIEW_BLOCKING=$(grep -c '❌.*BLOCKING\|BLOCKING.*❌' "$REVIEW_FILE" 2>/dev/null) || REVIEW_BLOCKING=0
             fi
             if [ "$PLAN_UNCHECKED" -eq 0 ] && [ "$PLAN_BLOCKED" -eq 0 ] && [ "$REVIEW_BLOCKING" -eq 0 ]; then
-                FAST_COMPLETE=true
-                echo ""
-                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
-                echo -e "${C_SUCCESS}  ✅ FAST COMPLETION — All plan items done, no blocking issues${C_RESET}"
-                echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
-                echo ""
+                # If build gate is set, verify it passes before fast-completing
+                if [ -n "${RALPH_BUILD_GATE:-}" ]; then
+                    if eval "$RALPH_BUILD_GATE" > /dev/null 2>&1; then
+                        FAST_COMPLETE=true
+                    else
+                        echo -e "  ${C_WARNING}⚠${C_RESET}  Fast-complete blocked: build gate failed — falling through to full completion check"
+                    fi
+                else
+                    FAST_COMPLETE=true
+                fi
+
+                if [ "$FAST_COMPLETE" = true ]; then
+                    echo ""
+                    echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                    echo -e "${C_SUCCESS}  ✅ FAST COMPLETION — All plan items done, no blocking issues${C_RESET}"
+                    echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+                    echo ""
+                fi
             fi
         fi
 
