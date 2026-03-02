@@ -149,6 +149,83 @@ run_full_mode() {
 
         echo -e "  ${C_SUCCESS}✓${C_RESET} Plan phase complete ($PLAN_ITERATION iterations)"
 
+        # Clear user-review.md after plan has incorporated it
+        USER_REVIEW_FILE="./.ralph/user-review.md"
+        if [ -f "$USER_REVIEW_FILE" ]; then
+            USER_CONTENT_LINES=$(grep -cvE '^(#|---|$|<!--|_|\*\*|- ?$)' "$USER_REVIEW_FILE" 2>/dev/null) || USER_CONTENT_LINES=0
+            if [ "$USER_CONTENT_LINES" -gt 0 ]; then
+                echo -e "  ${C_API}ℹ${C_RESET}  Clearing user-review.md (notes incorporated into plan)"
+                cat > "$USER_REVIEW_FILE" << 'USERREVIEWEOF'
+# User Review Notes
+
+This file is for YOUR manual review notes, feedback, and guidance for the next planning/build cycle.
+
+**Ralph will prioritize these notes** when running in plan mode.
+
+---
+
+## How to Use
+
+Add your notes in the sections below. After running 1-3 plan iterations, these notes will be formalized into the implementation plan. You can then clear this file for the next review cycle.
+
+---
+
+## 🐛 Bugs Found
+
+<!-- List bugs you discovered during manual testing -->
+
+-
+
+---
+
+## ❌ Implementation Issues
+
+<!-- Things that weren't implemented the way you wanted -->
+
+-
+
+---
+
+## 🎯 Focus Areas for Next Iteration
+
+<!-- What should Ralph prioritize in the next build cycle? -->
+
+-
+
+---
+
+## 💡 Suggestions & Improvements
+
+<!-- Ideas for improvements, refactoring, or enhancements -->
+
+-
+
+---
+
+## 📝 General Notes
+
+<!-- Any other context, clarifications, or guidance -->
+
+-
+
+---
+
+## ⚠️ Do Not Touch
+
+<!-- Files or areas Ralph should avoid modifying -->
+
+-
+
+---
+
+_Clear this file after your notes have been incorporated into the implementation plan._
+USERREVIEWEOF
+                git add "$USER_REVIEW_FILE"
+                git commit -m "ralph: clear user-review.md after plan incorporation" 2>/dev/null || true
+                git push origin "$(git branch --show-current)" 2>/dev/null || true
+            fi
+        fi
+
         fi  # end SKIP_PLAN
 
         # ─────────────────────────────────────────────────────────────────────
@@ -248,6 +325,22 @@ run_full_mode() {
                 if [ "$GATE_PASSED" = false ]; then
                     echo -e "  ${C_WARNING}⚠${C_RESET}  Build gate still failing after $RALPH_BUILD_GATE_RETRIES retries — proceeding to REVIEW"
                 fi
+            fi
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # REVIEW RESET (cycle 2+: clear stale findings from previous cycle)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ $CYCLE -gt 1 ]; then
+            REVIEW_FILE="./.ralph/review.md"
+            CHECKLIST_FILE="./.ralph/review_checklist.md"
+            if [ -f "$REVIEW_FILE" ]; then
+                echo -e "  ${C_API}ℹ${C_RESET}  Clearing previous cycle review findings"
+                > "$REVIEW_FILE"
+            fi
+            if [ -f "$CHECKLIST_FILE" ]; then
+                echo -e "  ${C_API}ℹ${C_RESET}  Regenerating review checklist for current cycle"
+                rm -f "$CHECKLIST_FILE"
             fi
         fi
 
