@@ -149,6 +149,20 @@ run_full_mode() {
 
         echo -e "  ${C_SUCCESS}✓${C_RESET} Plan phase complete ($PLAN_ITERATION iterations)"
 
+        # Clear user-intervention.md after plan has incorporated responses
+        INTERVENTION_FILE="./.ralph/user-intervention.md"
+        if [ -f "$INTERVENTION_FILE" ]; then
+            # Check if file has actual user responses (not just the template)
+            INTERVENTION_CONTENT_LINES=$(grep -cvE '^(#|---|$|<!--|_|\*\*|- ?$|Ralph|<!--)' "$INTERVENTION_FILE" 2>/dev/null) || INTERVENTION_CONTENT_LINES=0
+            if [ "$INTERVENTION_CONTENT_LINES" -gt 0 ]; then
+                echo -e "  ${C_API}ℹ${C_RESET}  Clearing user-intervention.md (responses incorporated into plan)"
+                > "$INTERVENTION_FILE"
+                git add "$INTERVENTION_FILE"
+                git commit -m "ralph: clear user-intervention.md after plan incorporation" 2>/dev/null || true
+                git push origin "$(git branch --show-current)" 2>/dev/null || true
+            fi
+        fi
+
         # Clear user-review.md after plan has incorporated it
         USER_REVIEW_FILE="./.ralph/user-review.md"
         if [ -f "$USER_REVIEW_FILE" ]; then
@@ -589,13 +603,28 @@ USERREVIEWEOF
             fi
         fi
 
-        if [ "$FAST_COMPLETE" = true ] || run_completion_check; then
+        if [ "$FAST_COMPLETE" = true ]; then
+            COMPLETION_RESULT=0
+        else
+            run_completion_check
+            COMPLETION_RESULT=$?
+        fi
+
+        if [ $COMPLETION_RESULT -eq 0 ]; then
             if [ "$IS_DECOMPOSED" = true ]; then
                 mark_subspec_complete
                 echo -e "  ${C_ACCENT}→${C_RESET} Sub-spec complete. Selecting next sub-spec..."
             else
                 IMPLEMENTATION_COMPLETE=true
             fi
+        elif [ $COMPLETION_RESULT -eq 2 ]; then
+            echo -e "  ${C_ACCENT}🛑${C_RESET} Ralph is blocked on user intervention. Stopping iterations."
+            echo -e "  ${C_ACCENT}📋${C_RESET} Review ${C_HIGHLIGHT}.ralph/user-intervention.md${C_RESET} and provide answers."
+            echo -e "  ${C_ACCENT}💡${C_RESET} Drop reference files in ${C_HIGHLIGHT}.ralph/references/${C_RESET} if needed."
+            echo -e "  ${C_ACCENT}→${C_RESET}  Re-run Ralph after responding to resume."
+            append_progress "blocked_on_user" "All agent work complete. User intervention required."
+            stage_ralph_memory
+            break
         else
             echo -e "  ${C_ACCENT}→${C_RESET} Starting next cycle..."
         fi

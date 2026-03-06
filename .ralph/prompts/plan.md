@@ -9,12 +9,14 @@ Another turn will be started automatically to continue refining the plan.
 
 1. Read `.ralph/specs/active.md` to understand what we're building
 2. Read `.ralph/user-review.md` (if present) — **HIGHEST PRIORITY** — user's manual review notes
-3. Read `.ralph/implementation_plan.md` (if present) to see current plan state
-4. Read `.ralph/review.md` (if present) to see findings from code review
-5. Read `.ralph/AGENTS.md` for project conventions
-6. Read `.ralph/progress.txt` (if present) — cross-iteration memory with prior decisions, blockers, and learnings
-7. Read `.ralph/guardrails.md` (if present) — accumulated anti-patterns and constraints. **Respect these before making decisions.**
-8. **Sub-Spec Context**: If `active.md` references a master spec (look for "Master Spec:" header), also read the master spec file for broader context. This helps you understand how this sub-spec fits into the larger feature.
+3. Read `.ralph/user-intervention.md` (if present) — **HIGH PRIORITY** — user responses to Ralph's questions from a previous blocked state. Process these responses and unblock the corresponding plan items.
+4. Read `.ralph/implementation_plan.md` (if present) to see current plan state
+5. Read `.ralph/review.md` (if present) to see findings from code review
+6. Read `.ralph/AGENTS.md` for project conventions
+7. Read `.ralph/progress.txt` (if present) — cross-iteration memory with prior decisions, blockers, and learnings
+8. Read `.ralph/guardrails.md` (if present) — accumulated anti-patterns and constraints. **Respect these before making decisions.**
+9. Scan `.ralph/references/` for any new files — these may contain user-provided data, answers, or resources that unblock previously blocked work.
+10. **Sub-Spec Context**: If `active.md` references a master spec (look for "Master Spec:" header), also read the master spec file for broader context. This helps you understand how this sub-spec fits into the larger feature.
 
 ---
 
@@ -30,6 +32,19 @@ Use subagents to analyze the codebase and create/update `.ralph/implementation_p
 - User-identified bugs, issues, and focus areas MUST be addressed before anything else
 - Research each user note with subagents to understand the context and formalize it into the plan
 - Add user notes to "Phase 0: User Review Fixes" in the implementation plan
+
+### 🛑 User Intervention Responses (HIGH PRIORITY)
+
+**If `.ralph/user-intervention.md` exists and has user responses:**
+- The user has answered questions Ralph asked when it was previously blocked
+- Read each response in the "Your Response" sections
+- Check `.ralph/references/` for any new files the user may have provided (data exports, configs, etc.)
+- For each answered question:
+  1. Save any provided data/answers to `.ralph/references/` as a named file for future reference (if not already there)
+  2. Update the implementation plan to unblock the corresponding items — remove `[BLOCKED]` tags and update task descriptions with the new information
+  3. Re-prioritize unblocked items appropriately in the plan
+- After processing all responses, clear `user-intervention.md` (truncate to an empty template)
+- Log the unblocking in `.ralph/progress.txt`
 
 ### Research Phase
 - Use up to 500 parallel Sonnet subagents to search existing source code

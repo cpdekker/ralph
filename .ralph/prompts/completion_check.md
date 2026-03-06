@@ -23,6 +23,16 @@ Analyze whether all requirements from the spec have been implemented and the rev
 
 ## Evaluation Criteria
 
+### For BLOCKED ON USER status (check this FIRST)
+
+Before evaluating completeness, check whether all remaining work requires user intervention. This is true when:
+
+1. **All actionable items are done** — Every item the agent CAN perform is marked `[x]`
+2. **Remaining items need the user** — Unchecked items are blocked on user input, external access, manual steps, or decisions only the user can make (e.g., database credentials, environment access, design decisions, answering questions)
+3. **No code changes can unblock progress** — The agent has exhausted all work it can do independently
+
+If this is the case, set `"blocked_on_user": true` and populate the `"user_intervention"` field (see Response Format below). The `"complete"` field should reflect whether the spec is fully implemented (likely `false` if work remains blocked). This tells the loop to stop iterating and request user help instead of wasting cycles.
+
 ### For COMPLETE status (confidence ≥ 0.80)
 
 ALL of the following must be true:
@@ -148,6 +158,47 @@ You MUST respond with ONLY a valid JSON object. No markdown, no explanation, no 
     "Blocked: Email service integration awaiting API key"
   ],
   "recommendation": "Address blocking security issue first, then complete Phase 2.3"
+}
+```
+
+### Blocked on user (all agent work done, needs human input):
+```json
+{
+  "complete": false,
+  "confidence": 0.72,
+  "blocked_on_user": true,
+  "reason": "All agent-actionable work complete. 2 phases blocked on database access that only the user can provide.",
+  "metrics": {
+    "spec_requirements_met": 8,
+    "spec_requirements_total": 10,
+    "plan_items_complete": 45,
+    "plan_items_total": 52,
+    "plan_items_manual": 0,
+    "plan_items_blocked": 7,
+    "blocking_issues": 0,
+    "attention_issues": 0,
+    "minor_issues": 0
+  },
+  "user_intervention": {
+    "summary": "Cannot proceed without Snowflake database access",
+    "items": [
+      {
+        "id": "db-access",
+        "type": "access",
+        "question": "Please provide Snowflake database credentials or run the extraction endpoint and save the output to .ralph/references/metric-mappings.json",
+        "context": "Phase 2A.2 requires querying METRICS table to populate metricId fields in 1,368 columns across 53 dataset files",
+        "blocks": ["Phase 2A.2", "Phase 3"]
+      },
+      {
+        "id": "design-decision",
+        "type": "decision",
+        "question": "Should source table names use the VIEW_ prefix or raw table names in the SourceTable enum?",
+        "context": "Phase 3A needs to create SourceTable enum values",
+        "blocks": ["Phase 3A"]
+      }
+    ]
+  },
+  "recommendation": "User intervention required. Provide answers in .ralph/references/ to unblock remaining phases."
 }
 ```
 

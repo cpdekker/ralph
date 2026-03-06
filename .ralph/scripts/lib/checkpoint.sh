@@ -143,7 +143,7 @@ append_guardrail() {
 
 # stage_ralph_memory() — Stages cross-iteration memory files for git
 stage_ralph_memory() {
-    git add .ralph/progress.txt .ralph/guardrails.md .ralph/AGENTS.md 2>/dev/null || true
+    git add .ralph/progress.txt .ralph/guardrails.md .ralph/AGENTS.md .ralph/user-intervention.md 2>/dev/null || true
 }
 
 # persist_iteration_log() — Persist minimal iteration log to .ralph/logs/ (always, regardless of insights)

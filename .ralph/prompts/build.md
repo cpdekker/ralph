@@ -11,6 +11,7 @@
 3. Read `.ralph/AGENTS.md` for build commands and project conventions
 4. Read `.ralph/progress.txt` (if present) — context from prior iterations (decisions, blockers, learnings)
 5. Read `.ralph/guardrails.md` (if present) — anti-patterns and constraints. **Check these before implementing.**
+6. Read `.ralph/user-intervention.md` (if present) — if this file exists with unanswered questions, **do not attempt blocked items**. Only work on unblocked items. If ALL remaining items are blocked on user intervention, commit a note to progress.txt and STOP — do not waste the iteration.
 
 ---
 

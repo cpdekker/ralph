@@ -33,7 +33,7 @@ get_next_review_specialist() {
 
 # Run completion check to determine if the spec is fully implemented.
 # Invokes completion_check.md prompt and parses the JSON response.
-# Returns: 0 if complete, 1 if not complete
+# Returns: 0 if complete, 1 if not complete, 2 if blocked on user
 run_completion_check() {
     echo ""
     echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
@@ -79,6 +79,16 @@ run_completion_check() {
     local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
     local reason=$(echo "$json_text" | jq -r '.reason // empty' 2>/dev/null)
 
+    # Check for blocked_on_user
+    local blocked_on_user=$(echo "$json_text" | jq -r '.blocked_on_user // false' 2>/dev/null)
+    if [ -z "$blocked_on_user" ] || [ "$blocked_on_user" = "null" ]; then
+        if echo "$json_text" | grep -q '"blocked_on_user"[[:space:]]*:[[:space:]]*true'; then
+            blocked_on_user="true"
+        else
+            blocked_on_user="false"
+        fi
+    fi
+
     if [ "$is_complete" = "true" ]; then
         echo ""
         echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
@@ -88,6 +98,19 @@ run_completion_check() {
         [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
         echo ""
         return 0  # Complete
+    elif [ "$blocked_on_user" = "true" ]; then
+        echo ""
+        echo -e "${C_ACCENT}════════════════════════════════════════════════════════════${C_RESET}"
+        echo -e "${C_ACCENT}  🛑 BLOCKED ON USER — All agent work complete${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_ACCENT}  Confidence: ${confidence}${C_RESET}"
+        echo -e "${C_ACCENT}════════════════════════════════════════════════════════════${C_RESET}"
+        [ -n "$reason" ] && echo -e "  ${C_PRIMARY}$reason${C_RESET}"
+        echo ""
+
+        # Generate user-intervention.md from the completion check response
+        create_user_intervention_file "$json_text"
+
+        return 2  # Blocked on user
     else
         echo ""
         echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
@@ -98,6 +121,97 @@ run_completion_check() {
         echo ""
         return 1  # Not complete
     fi
+}
+
+# Create .ralph/user-intervention.md from completion check JSON.
+# Parses the user_intervention field and writes a structured file
+# that the user can fill in and Ralph will process on next run.
+create_user_intervention_file() {
+    local json_text=$1
+    local intervention_file="./.ralph/user-intervention.md"
+
+    local summary=$(echo "$json_text" | jq -r '.user_intervention.summary // "User intervention required to continue."' 2>/dev/null)
+    local reason=$(echo "$json_text" | jq -r '.reason // ""' 2>/dev/null)
+
+    cat > "$intervention_file" << INTERVENTIONEOF
+# User Intervention Required
+
+Ralph has completed all work it can do independently and is now blocked.
+
+**Status:** $reason
+
+**Summary:** $summary
+
+---
+
+## Action Items
+
+INTERVENTIONEOF
+
+    # Extract each intervention item from the JSON array
+    local item_count=$(echo "$json_text" | jq -r '.user_intervention.items | length // 0' 2>/dev/null)
+
+    if [ -n "$item_count" ] && [ "$item_count" -gt 0 ]; then
+        local i=0
+        while [ $i -lt $item_count ]; do
+            local item_id=$(echo "$json_text" | jq -r ".user_intervention.items[$i].id // \"item-$i\"" 2>/dev/null)
+            local item_type=$(echo "$json_text" | jq -r ".user_intervention.items[$i].type // \"question\"" 2>/dev/null)
+            local item_question=$(echo "$json_text" | jq -r ".user_intervention.items[$i].question // \"\"" 2>/dev/null)
+            local item_context=$(echo "$json_text" | jq -r ".user_intervention.items[$i].context // \"\"" 2>/dev/null)
+            local item_blocks=$(echo "$json_text" | jq -r ".user_intervention.items[$i].blocks // [] | join(\", \")" 2>/dev/null)
+
+            cat >> "$intervention_file" << ITEMEOF
+
+### $((i + 1)). [$item_type] $item_id
+
+**Question:** $item_question
+
+**Context:** $item_context
+
+**Blocks:** $item_blocks
+
+**Your Response:**
+<!-- Write your answer below, or place files in .ralph/references/ and reference them here -->
+
+
+ITEMEOF
+            i=$((i + 1))
+        done
+    else
+        # Fallback: extract remaining items from the completion check
+        local remaining=$(echo "$json_text" | jq -r '.remaining // [] | .[]' 2>/dev/null)
+        if [ -n "$remaining" ]; then
+            echo "$remaining" | while IFS= read -r item; do
+                echo "- $item" >> "$intervention_file"
+            done
+            echo "" >> "$intervention_file"
+            echo "**Please provide guidance on how to unblock these items.**" >> "$intervention_file"
+        fi
+    fi
+
+    cat >> "$intervention_file" << 'FOOTEREOF'
+
+---
+
+## How to Respond
+
+1. **Answer inline** — Fill in the "Your Response" sections above
+2. **Provide files** — Drop reference data into `.ralph/references/` (e.g., database exports, API responses, config files)
+3. **Restart Ralph** — Run Ralph again after providing your answers. The planning phase will incorporate your responses.
+
+**Tip:** Name reference files descriptively (e.g., `metric-mappings.json`, `source-tables.csv`) so Ralph can match them to the questions above.
+
+---
+
+_This file was auto-generated by Ralph's completion check. It will be cleared after your responses are incorporated into the next planning cycle._
+FOOTEREOF
+
+    # Stage and commit the intervention file
+    git add "$intervention_file"
+    git commit -m "ralph: blocked on user — intervention required" 2>/dev/null || true
+    git push origin "$(git branch --show-current)" 2>/dev/null || true
+
+    echo -e "  ${C_ACCENT}📋${C_RESET} Created ${C_HIGHLIGHT}.ralph/user-intervention.md${C_RESET} — review and provide answers to unblock"
 }
 
 # Run spec signoff check to determine if a spec is ready for implementation.
