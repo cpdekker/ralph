@@ -207,4 +207,9 @@ persist_iteration_log() {
 EOF
     # Stage for git
     git add "$output_file" 2>/dev/null || true
+
+    # Export metrics for callers to read (e.g., zero-work detection)
+    LAST_ITER_FILES_MODIFIED=$files_changed
+    LAST_ITER_CODE_FILES=$code_files
+    LAST_ITER_COMMITS=$commits
 }

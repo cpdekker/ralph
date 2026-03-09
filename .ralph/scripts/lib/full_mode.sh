@@ -367,13 +367,17 @@ USERREVIEWEOF
         CHECKLIST_FILE="./.ralph/review_checklist.md"
         if [ ! -f "$CHECKLIST_FILE" ] || [ $CYCLE -eq 1 ]; then
             echo -e "  ${C_ACCENT}⚙${C_RESET}  Running review setup..."
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
             SETUP_LOG_FILE="$TEMP_DIR/review_setup_cycle_${CYCLE}.log"
+            SETUP_START_TIME=$(date +%s)
+            SETUP_START_SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
 
             if [ "$VERBOSE" = true ]; then
                 cat "./.ralph/prompts/review/setup.md" | claude -p \
                     --dangerously-skip-permissions \
                     --output-format=stream-json \
                     --verbose 2>&1 | tee "$SETUP_LOG_FILE"
+                SETUP_EXIT=${PIPESTATUS[1]}
             else
                 cat "./.ralph/prompts/review/setup.md" | claude -p \
                     --dangerously-skip-permissions \
@@ -383,7 +387,11 @@ USERREVIEWEOF
                 SETUP_PID=$!
                 spin $SETUP_PID "Running review setup..."
                 wait $SETUP_PID
+                SETUP_EXIT=$?
             fi
+
+            # Log the review setup iteration
+            persist_iteration_log "$SETUP_LOG_FILE" "$TOTAL_ITERATIONS" "REVIEW-SETUP (1/1)" "${SETUP_EXIT:-0}" "$SETUP_START_TIME" "$SETUP_START_SHA"
 
             git push origin "$CURRENT_BRANCH" || git push -u origin "$CURRENT_BRANCH"
             echo -e "  ${C_SUCCESS}✓${C_RESET} Review setup complete"
@@ -500,6 +508,7 @@ USERREVIEWEOF
             echo -e "  ${C_API}ℹ${C_RESET}  Issues to fix: ${C_ERROR}❌ Blocking: $FIX_BLOCKING${C_RESET}  ${C_WARNING}⚠️ Attention: $FIX_ATTENTION${C_RESET}"
 
             REVIEWFIX_ITERATION=0
+            CONSECUTIVE_ZERO_WORK=0
             PHASE_ERROR=false
             while [ $REVIEWFIX_ITERATION -lt $FULL_REVIEWFIX_ITERS ]; do
                 REVIEWFIX_ITERATION=$((REVIEWFIX_ITERATION + 1))
@@ -516,12 +525,30 @@ USERREVIEWEOF
                     echo -e "  ${C_API}ℹ${C_RESET}  Remaining: ${C_ERROR}❌ $REMAINING_BLOCKING${C_RESET}  ${C_WARNING}⚠️ $REMAINING_ATTENTION${C_RESET}"
                 fi
 
+                # Reset metrics before iteration (set by persist_iteration_log)
+                LAST_ITER_FILES_MODIFIED=0
+                LAST_ITER_CODE_FILES=0
+                LAST_ITER_COMMITS=0
+
                 if ! run_single_iteration "./.ralph/prompts/review/fix.md" $TOTAL_ITERATIONS "REVIEW-FIX ($REVIEWFIX_ITERATION/$FULL_REVIEWFIX_ITERS)"; then
                     echo -e "  ${C_ERROR}✗${C_RESET} Claude error - checking circuit breaker"
                     if check_circuit_breaker; then
                         PHASE_ERROR=true
                         break
                     fi
+                fi
+
+                # Zero-work early termination: if iteration produced no file changes and no commits,
+                # it's spinning without making progress. Exit after 2 consecutive zero-work iterations.
+                if [ "${LAST_ITER_CODE_FILES:-0}" -eq 0 ] && [ "${LAST_ITER_COMMITS:-0}" -le 1 ]; then
+                    CONSECUTIVE_ZERO_WORK=$((CONSECUTIVE_ZERO_WORK + 1))
+                    if [ $CONSECUTIVE_ZERO_WORK -ge 2 ]; then
+                        echo -e "  ${C_WARNING}⚠${C_RESET}  $CONSECUTIVE_ZERO_WORK consecutive zero-work iterations — exiting REVIEW-FIX early"
+                        append_progress "zero_work_exit" "REVIEW-FIX exited after $CONSECUTIVE_ZERO_WORK consecutive zero-work iterations"
+                        break
+                    fi
+                else
+                    CONSECUTIVE_ZERO_WORK=0
                 fi
             done
 

@@ -9,6 +9,7 @@ Focus on the loop's efficiency, failure modes, and process improvements. The imp
 1. Read all JSON files in `.ralph/insights/iteration_logs/` — these are structured summaries of each iteration
 2. Read `.ralph/insights/insights.md` if it exists — preserve the History section (keep only the last 5 entries)
 3. Read `.ralph/specs/active.md` and `.ralph/implementation_plan.md` only for context — do NOT reproduce their status tracking
+4. Read `.ralph/AGENTS.md` — check if it has a test strategy section. If not, and you detect test-related waste, your Project-Specific recommendations should include a concrete AGENTS.md snippet the user can add
 
 ## Iteration Log Schema
 
@@ -113,10 +114,17 @@ Write or update `.ralph/insights/insights.md`. **Keep the total output under 150
 
 ## Recommendations
 
-{Exactly 3 recommendations. Each must be a specific, actionable change to Ralph's configuration, prompts, or process — NOT a project task.}
+{Exactly 3 recommendations. Split into two categories:}
 
-1. **{Title}**: {One sentence. Reference specific iteration data.}
-2. **{Title}**: {One sentence. Reference specific iteration data.}
+### Ralph-Actionable (changes to Ralph prompts, loop config, or scripts)
+{Only include recommendations that Ralph's maintainer can implement by modifying files in `.ralph/` or `lib/`. Reference the specific prompt file, script, or config to change.}
+
+1. **{Title}**: {One sentence. Reference specific iteration data and the file to change.}
+
+### Project-Specific (changes the user should make to AGENTS.md or repo config)
+{Recommendations that depend on the destination project's test runner, build system, or tooling. The user must act on these — Ralph can't automate them. For test-related recommendations, suggest a concrete AGENTS.md snippet the user could add (e.g., "Add to AGENTS.md: `## Test Strategy\n- For targeted tests: npm run test -- --testPathPattern=<changed-module>`").}
+
+2. **{Title}**: {One sentence. Reference specific iteration data. Include a suggested AGENTS.md snippet if applicable.}
 3. **{Title}**: {One sentence. Reference specific iteration data.}
 
 ## History
@@ -134,7 +142,7 @@ Write or update `.ralph/insights/insights.md`. **Keep the total output under 150
 - Recommendations must be about the Ralph loop process (iteration counts, prompt changes, phase timing, quality gates) — NOT about what code to write next.
 - Keep total output under 150 lines. Be concise. If a section has nothing to report, omit it entirely.
 - NEVER modify spec files or implementation plans.
-- Preserve History entries — append new, prune to last 5.
+- Preserve History entries — append new, prune to last 5. **Deduplicate**: if the new entry's key finding is substantially the same as the most recent entry (same iteration, same issue), update that entry's timestamp instead of appending a duplicate.
 - Cite specific iteration numbers when referencing findings.
 - If no iteration logs exist, write a minimal insights.md noting that no data is available yet.
 - Commit the updated insights.md with message "ralph: update insights analysis"

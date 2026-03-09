@@ -45,6 +45,7 @@ Address issues in this order:
    - Implement the fix
    - Add or update tests to prevent regression
    - Verify the fix works (run relevant tests)
+   - **Test optimization**: If ALL your changes this turn are limited to `.ralph/` files (review.md, plans, status) or other `.md`/`.txt` documentation, skip test execution entirely — tests validate code, not documentation.
 
 3. **Update `.ralph/review.md`:**
    - Change `❌` to `✅` for fixed BLOCKING issues

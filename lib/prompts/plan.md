@@ -191,6 +191,7 @@ For complex features, track dependencies between items:
 ## Scope Boundaries
 
 - **Plan only** - Do NOT implement anything
+- **No test execution** - Do NOT run any test commands (`npm test`, `nx test`, `pytest`, etc.) during PLAN. There is no executable code to validate yet — tests on planning artifacts are pure waste.
 - **Update plan only** - Commit and push changes to the plan, then stop
 - **One iteration** - Refine the plan, don't try to make it perfect in one pass
 
