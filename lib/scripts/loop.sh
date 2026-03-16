@@ -31,10 +31,14 @@
 # Circuit breaker settings (via environment variables):
 #   MAX_CONSECUTIVE_FAILURES=3  # Stop after N consecutive failures (default: 3)
 
-# Resolve prompt directory: /ralph-lib/prompts when run via CLI, or ./.ralph/prompts as fallback
-# When ralph CLI mounts lib/ at /ralph-lib, prompts live there.
-# For local overrides, check ./.ralph/prompts/ first.
-if [ -d "/ralph-lib/prompts" ]; then
+# Resolve prompt directory:
+# 1. RALPH_LIB_DIR env var (set by loop-runner for worktree mode)
+# 2. /ralph-lib/prompts (Docker mode — CLI mounts lib/ at /ralph-lib)
+# 3. ./.ralph/prompts as final fallback
+# For local overrides, resolve_prompt() checks ./.ralph/prompts/ first.
+if [ -n "$RALPH_LIB_DIR" ] && [ -d "$RALPH_LIB_DIR/prompts" ]; then
+    PROMPTS_DIR="$RALPH_LIB_DIR/prompts"
+elif [ -d "/ralph-lib/prompts" ]; then
     PROMPTS_DIR="/ralph-lib/prompts"
 else
     PROMPTS_DIR="./.ralph/prompts"
