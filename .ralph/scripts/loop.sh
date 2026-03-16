@@ -543,3 +543,10 @@ echo -e "${C_SUCCESS}  Ralph completed $COMPLETED_ITERATIONS iteration(s) in $FI
 echo -e "${C_SUCCESS}  Errors: $ERROR_COUNT${C_RESET}"
 echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
 echo ""
+
+# Generate final summary for the user
+if [ "$COMPLETED_ITERATIONS" -gt 0 ] && [ "${NO_COMMIT:-false}" != true ]; then
+    run_final_summary "complete"
+    stage_ralph_memory
+    git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+fi

@@ -106,6 +106,57 @@ run_single_iteration() {
     return 0
 }
 
+# Run final summary — invokes Claude to generate .ralph/summary.md
+# Called at the end of any mode to give the user a full picture of what happened.
+#
+# Args:
+#   $1 - stop_reason: "complete", "max_iterations", "blocked_on_user", "circuit_breaker"
+run_final_summary() {
+    local stop_reason=${1:-"complete"}
+    local summary_prompt="./.ralph/prompts/summary.md"
+
+    if [ ! -f "$summary_prompt" ]; then
+        ralph_warn "Summary prompt not found — skipping final summary"
+        return 0
+    fi
+
+    ralph_header "Generating Final Summary"
+
+    local summary_log="$TEMP_DIR/summary.log"
+
+    if [ "$VERBOSE" = true ]; then
+        cat "$summary_prompt" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose 2>&1 | tee "$summary_log"
+        local exit_code=${PIPESTATUS[1]}
+    else
+        cat "$summary_prompt" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$summary_log" 2>&1 &
+
+        local summary_pid=$!
+        spin $summary_pid "Generating summary..."
+        wait $summary_pid
+        local exit_code=$?
+    fi
+
+    if [ $exit_code -eq 0 ] && [ -f "./.ralph/summary.md" ]; then
+        ralph_success "Summary written to .ralph/summary.md"
+
+        # Display summary contents to terminal
+        echo ""
+        cat "./.ralph/summary.md"
+        echo ""
+
+        # Stage summary file
+        git add .ralph/summary.md 2>/dev/null
+    else
+        ralph_warn "Summary generation failed (exit code: $exit_code)"
+    fi
+}
+
 # Check if circuit breaker should trip (too many consecutive failures)
 check_circuit_breaker() {
     if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then

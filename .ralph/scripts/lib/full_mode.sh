@@ -677,4 +677,15 @@ USERREVIEWEOF
     echo -e "${C_SUCCESS}  Errors: $ERROR_COUNT${C_RESET}"
     echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
     echo ""
+
+    # Generate final summary for the user
+    if [ "$TOTAL_ITERATIONS" -gt 0 ]; then
+        local stop_reason="complete"
+        if [ "$IMPLEMENTATION_COMPLETE" != true ]; then
+            stop_reason="max_iterations"
+        fi
+        run_final_summary "$stop_reason"
+        stage_ralph_memory
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+    fi
 }
