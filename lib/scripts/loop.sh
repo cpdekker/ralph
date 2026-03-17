@@ -140,13 +140,14 @@ elif [ "$MODE" = "decompose" ]; then
     MAX_ITERATIONS=1
     VERBOSE=true
 elif [ "$MODE" = "spec" ]; then
-    # Spec mode: research → draft → refine → review → review-fix → signoff
+    # Spec mode: research → draft → refine → debate → review-fix → signoff
     MAX_ITERATIONS=${MAX_ITERATIONS:-8}
     SPEC_RESEARCH_ITERS=1
     SPEC_DRAFT_ITERS=1
     SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
+    SPEC_DEBATE_CHALLENGE=${SPEC_DEBATE_CHALLENGE:-true}
 elif [ "$MODE" = "insights" ]; then
     # Insights mode: run analysis on existing iteration logs
     MAX_ITERATIONS=1
@@ -199,7 +200,10 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
 if [ "$MODE" = "spec" ]; then
-    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    local debate_iters=5
+    [ "$SPEC_DEBATE_CHALLENGE" = "true" ] && debate_iters=8
+    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → debate($debate_iters) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    echo "Debate:  challenge=$SPEC_DEBATE_CHALLENGE"
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
@@ -226,6 +230,12 @@ if [ "$MODE" = "spec" ]; then
     for pf in "$(resolve_prompt spec/research.md)" "$(resolve_prompt spec/draft.md)" "$(resolve_prompt spec/refine.md)" "$(resolve_prompt spec/review.md)" "$(resolve_prompt spec/review_fix.md)" "$(resolve_prompt spec/signoff.md)"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for spec mode)"
+            exit 1
+        fi
+    done
+    for pf in "$(resolve_prompt spec/debate/setup.md)" "$(resolve_prompt spec/debate/skeptic.md)" "$(resolve_prompt spec/debate/synthesize.md)"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for spec debate)"
             exit 1
         fi
     done
@@ -746,6 +756,16 @@ capture_iteration_summary() {
     # Extract the phase name from the display string (e.g. "BUILD (3/10)" -> "BUILD", "REVIEW-QA (5/25)" -> "REVIEW-QA")
     local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
 
+    # Extract debate metadata if this is a debate sub-phase
+    local debate_subphase=""
+    local debate_persona=""
+    case "$phase_display" in
+        DEBATE\ SETUP)      debate_subphase="SETUP" ;;
+        CRITIQUE\ \(*)      debate_subphase="CRITIQUE"; debate_persona=$(echo "$phase_display" | sed 's/CRITIQUE (\(.*\))/\1/') ;;
+        CHALLENGE\ \(*)     debate_subphase="CHALLENGE"; debate_persona=$(echo "$phase_display" | sed 's/CHALLENGE (\(.*\))/\1/') ;;
+        DEBATE\ SYNTHESIZE) debate_subphase="SYNTHESIZE" ;;
+    esac
+
     # Use git to get accurate metrics based on start SHA
     local files_changed=0
     local commits=0
@@ -816,7 +836,9 @@ capture_iteration_summary() {
   "recent_commits": "$recent_commits",
   "error_snippet": "$error_snippet",
   "start_sha": "$start_sha",
-  "branch": "$branch"
+  "branch": "$branch",
+  "debate_subphase": "$debate_subphase",
+  "debate_persona": "$debate_persona"
 }
 INSIGHTS_EOF
 }
@@ -1908,7 +1930,7 @@ run_master_completion_check() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPEC MODE - Creates specs: research → draft → refine → review → fix → signoff
+# SPEC MODE - Creates specs: research → draft → refine → debate → fix → signoff
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Helper function to run spec signoff check
@@ -2008,7 +2030,7 @@ if [ "$MODE" = "spec" ]; then
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║              SPEC CREATION MODE                            ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  research → draft → refine → review → fix → signoff       ║\033[0m"
+    echo -e "\033[1;35m║  research → draft → refine → debate → fix → signoff       ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 
@@ -2107,24 +2129,113 @@ if [ "$MODE" = "spec" ]; then
     echo -e "  \033[1;32m✓\033[0m Refine phase complete ($REFINE_ITERATION iterations)"
 
     # ─────────────────────────────────────────────────────────────────────
-    # PHASE 3a: REVIEW
+    # PHASE 3a: DEBATE (replaces single-reviewer REVIEW)
     # ─────────────────────────────────────────────────────────────────────
-    print_phase_banner "SPEC REVIEW" $SPEC_REVIEW_ITERS
+    DEBATE_DIR="./.ralph/spec_debate"
+    DEBATE_CHALLENGE_ENABLED="${SPEC_DEBATE_CHALLENGE:-true}"
 
-    REVIEW_ITERATION=0
-    while [ $REVIEW_ITERATION -lt $SPEC_REVIEW_ITERS ]; do
-        REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+    local debate_display_total=5
+    [ "$DEBATE_CHALLENGE_ENABLED" = "true" ] && debate_display_total=8
+
+    print_phase_banner "SPEC DEBATE" $debate_display_total
+
+    # Clean up previous debate state
+    rm -rf "$DEBATE_DIR"
+    mkdir -p "$DEBATE_DIR"
+
+    echo -e "  \033[1;34mℹ\033[0m  Challenge round: $DEBATE_CHALLENGE_ENABLED"
+
+    # ── SUB-PHASE: SETUP (moderator selects personas) ──
+    echo ""
+    echo -e "  \033[1;35m── Debate Setup ──\033[0m"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "$(resolve_prompt spec/debate/setup.md)" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+        echo -e "  \033[1;31m✗\033[0m Debate setup failed"
+        check_circuit_breaker
+    fi
+
+    # Parse selected personas from debate_plan.md
+    DEBATE_PERSONAS_LINE=""
+    if [ -f "$DEBATE_DIR/debate_plan.md" ]; then
+        DEBATE_PERSONAS_LINE=$(grep '^## PERSONAS=' "$DEBATE_DIR/debate_plan.md" 2>/dev/null | sed 's/^## PERSONAS=//')
+    fi
+
+    if [ -z "$DEBATE_PERSONAS_LINE" ]; then
+        echo -e "  \033[1;31m✗\033[0m Could not parse personas from debate_plan.md — falling back to skeptic,architect,qa"
+        DEBATE_PERSONAS_LINE="skeptic,architect,qa"
+    fi
+
+    IFS=',' read -ra DEBATE_PERSONAS <<< "$DEBATE_PERSONAS_LINE"
+    echo -e "  \033[1;32m✓\033[0m Debate setup complete — personas: ${DEBATE_PERSONAS[*]}"
+
+    # ── SUB-PHASE: CRITIQUE (each persona independently) ──
+    echo ""
+    echo -e "  \033[1;35m── Independent Critiques ──\033[0m"
+
+    for persona in "${DEBATE_PERSONAS[@]}"; do
+        local persona_prompt="$(resolve_prompt spec/debate/${persona}.md)"
+        if [ ! -f "$persona_prompt" ]; then
+            echo -e "  \033[1;33m⚠️\033[0m  No prompt file for persona '$persona' — skipping"
+            continue
+        fi
+
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        echo -e "  \033[1;34mℹ\033[0m  Running critique: $persona"
 
-        if ! run_single_iteration "$(resolve_prompt spec/review.md)" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Review phase failed"
+        if ! run_single_iteration "$persona_prompt" $TOTAL_ITERATIONS "CRITIQUE ($persona)"; then
+            echo -e "  \033[1;31m✗\033[0m $persona critique failed"
             if check_circuit_breaker; then
                 break
             fi
         fi
     done
 
-    echo -e "  \033[1;32m✓\033[0m Review phase complete"
+    echo -e "  \033[1;32m✓\033[0m All critiques complete"
+
+    # ── SUB-PHASE: CHALLENGE (cross-examination, optional) ──
+    if [ "$DEBATE_CHALLENGE_ENABLED" = "true" ]; then
+        echo ""
+        echo -e "  \033[1;35m── Cross-Examination ──\033[0m"
+
+        for persona in "${DEBATE_PERSONAS[@]}"; do
+            local persona_prompt="$(resolve_prompt spec/debate/${persona}.md)"
+            if [ ! -f "$persona_prompt" ]; then
+                continue
+            fi
+
+            if [ ! -f "$DEBATE_DIR/${persona}_critique.md" ]; then
+                echo -e "  \033[1;33m⚠️\033[0m  No critique from '$persona' — skipping challenge"
+                continue
+            fi
+
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            echo -e "  \033[1;34mℹ\033[0m  Running challenge: $persona"
+
+            if ! run_single_iteration "$persona_prompt" $TOTAL_ITERATIONS "CHALLENGE ($persona)"; then
+                echo -e "  \033[1;31m✗\033[0m $persona challenge failed"
+                if check_circuit_breaker; then
+                    break
+                fi
+            fi
+        done
+
+        echo -e "  \033[1;32m✓\033[0m Cross-examination complete"
+    else
+        echo -e "  \033[1;34mℹ\033[0m  Challenge round disabled — skipping"
+    fi
+
+    # ── SUB-PHASE: SYNTHESIZE (moderator produces spec_review.md) ──
+    echo ""
+    echo -e "  \033[1;35m── Synthesis ──\033[0m"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "$(resolve_prompt spec/debate/synthesize.md)" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE"; then
+        echo -e "  \033[1;31m✗\033[0m Synthesis failed"
+        check_circuit_breaker
+    fi
+
+    echo -e "  \033[1;32m✓\033[0m Debate phase complete — spec_review.md produced"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE 3b: REVIEW-FIX (conditional)

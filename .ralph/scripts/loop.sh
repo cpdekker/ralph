@@ -131,6 +131,7 @@ elif [ "$MODE" = "spec" ]; then
     SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
+    SPEC_DEBATE_CHALLENGE=${SPEC_DEBATE_CHALLENGE:-true}
 elif [ "$MODE" = "research" ]; then
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
     RESEARCH_CODEBASE_ITERS=${RESEARCH_CODEBASE_ITERS:-1}
@@ -186,7 +187,10 @@ ralph_header "Ralph Session"
 echo -e "${C_MUTED}  spec${C_RESET}      $SPEC_NAME"
 echo -e "${C_MUTED}  mode${C_RESET}      $MODE"
 if [ "$MODE" = "spec" ]; then
-    echo -e "${C_MUTED}  phases${C_RESET}    research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    local debate_iters=5
+    [ "$SPEC_DEBATE_CHALLENGE" = "true" ] && debate_iters=8
+    echo -e "${C_MUTED}  phases${C_RESET}    research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → debate($debate_iters) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    echo -e "${C_MUTED}  debate${C_RESET}     challenge=$SPEC_DEBATE_CHALLENGE"
 elif [ "$MODE" = "research" ]; then
     echo -e "${C_MUTED}  phases${C_RESET}    codebase($RESEARCH_CODEBASE_ITERS) → web($RESEARCH_WEB_ITERS) → review($RESEARCH_REVIEW_ITERS) → completion (max $MAX_RESEARCH_CYCLES cycles)"
 elif [ "$MODE" = "decompose" ]; then
@@ -225,6 +229,12 @@ elif [ "$MODE" = "spec" ]; then
     for pf in "./.ralph/prompts/spec/research.md" "./.ralph/prompts/spec/draft.md" "./.ralph/prompts/spec/refine.md" "./.ralph/prompts/spec/review.md" "./.ralph/prompts/spec/review_fix.md" "./.ralph/prompts/spec/signoff.md"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for spec mode)"
+            exit 1
+        fi
+    done
+    for pf in "./.ralph/prompts/spec/debate/setup.md" "./.ralph/prompts/spec/debate/skeptic.md" "./.ralph/prompts/spec/debate/synthesize.md"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for spec debate)"
             exit 1
         fi
     done
