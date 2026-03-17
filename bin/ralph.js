@@ -138,6 +138,21 @@ program
     await run(name, 'spec', opts);
   });
 
+// ralph research [name]
+program
+  .command('research [name]')
+  .description('Deep research: codebase -> web -> review -> completion')
+  .option('-n, --iterations <number>', 'number of iterations', '10')
+  .option('-v, --verbose', 'show full output')
+  .option('-b, --background', 'run in background (Ralph clones repo)')
+  .option('-y, --yes', 'skip interactive prompts, use defaults')
+  .option('--insights', 'enable insights collection and analysis')
+  .option('--insights-github', 'also create GitHub issues for findings')
+  .action(async (name, opts) => {
+    const { run } = require('../lib/commands/mode');
+    await run(name, 'research', opts);
+  });
+
 // ralph insights [spec]
 program
   .command('insights [spec]')
