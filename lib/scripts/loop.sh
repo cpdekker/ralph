@@ -2884,8 +2884,8 @@ USERREVIEWEOF
             fi
 
             if [ "$REVIEW_DEBATE_FINDINGS" -gt 0 ]; then
-                local debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
-                local debate_display_total=$((2 + debate_max_rounds))
+                debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
+                debate_display_total=$((2 + debate_max_rounds))
 
                 print_phase_banner "REVIEW DEBATE" $debate_display_total
 
@@ -2918,7 +2918,7 @@ USERREVIEWEOF
                 fi
 
                 IFS=',' read -ra RD_PAIRINGS <<< "$REVIEW_DEBATE_PAIRINGS_LINE"
-                local rd_num_pairings=${#RD_PAIRINGS[@]}
+                rd_num_pairings=${#RD_PAIRINGS[@]}
                 if [ "$rd_num_pairings" -gt "$debate_max_rounds" ]; then
                     rd_num_pairings=$debate_max_rounds
                 fi
@@ -2929,12 +2929,12 @@ USERREVIEWEOF
                 echo ""
                 echo -e "  \033[1;35m── Cross-Examination ──\033[0m"
 
-                local rd_round=0
+                rd_round=0
                 while [ "$rd_round" -lt "$rd_num_pairings" ]; do
                     rd_round=$((rd_round + 1))
-                    local rd_pairing="${RD_PAIRINGS[$((rd_round - 1))]}"
-                    local rd_spec_a="${rd_pairing%%:*}"
-                    local rd_spec_b="${rd_pairing##*:}"
+                    rd_pairing="${RD_PAIRINGS[$((rd_round - 1))]}"
+                    rd_spec_a="${rd_pairing%%:*}"
+                    rd_spec_b="${rd_pairing##*:}"
 
                     TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
                     echo -e "  \033[1;34mℹ\033[0m  Round $rd_round/$rd_num_pairings: $rd_spec_a vs $rd_spec_b"
@@ -3394,8 +3394,8 @@ if [ "$MODE" = "review" ] && [ "${REVIEW_DEBATE_ENABLED:-false}" = "true" ]; the
     fi
 
     if [ "$REVIEW_DEBATE_FINDINGS" -gt 0 ]; then
-        local debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
-        local debate_display_total=$((2 + debate_max_rounds))
+        debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
+        debate_display_total=$((2 + debate_max_rounds))
 
         print_phase_banner "REVIEW DEBATE" $debate_display_total
 
@@ -3418,16 +3418,16 @@ if [ "$MODE" = "review" ] && [ "${REVIEW_DEBATE_ENABLED:-false}" = "true" ]; the
         [ -z "$RD_PAIRINGS_LINE" ] && RD_PAIRINGS_LINE="security:api,qa:antagonist,db:perf"
 
         IFS=',' read -ra RD_PAIRINGS <<< "$RD_PAIRINGS_LINE"
-        local rd_num=${#RD_PAIRINGS[@]}
+        rd_num=${#RD_PAIRINGS[@]}
         [ "$rd_num" -gt "$debate_max_rounds" ] && rd_num=$debate_max_rounds
 
         # CROSS-EXAMINE
-        local rd_i=0
+        rd_i=0
         while [ "$rd_i" -lt "$rd_num" ]; do
             rd_i=$((rd_i + 1))
-            local rd_pair="${RD_PAIRINGS[$((rd_i - 1))]}"
-            local rd_a="${rd_pair%%:*}"
-            local rd_b="${rd_pair##*:}"
+            rd_pair="${RD_PAIRINGS[$((rd_i - 1))]}"
+            rd_a="${rd_pair%%:*}"
+            rd_b="${rd_pair##*:}"
             TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
             echo -e "  \033[1;34mℹ\033[0m  Round $rd_i/$rd_num: $rd_a vs $rd_b"
             run_single_iteration "$(resolve_prompt review/debate/cross_examine.md)" $TOTAL_ITERATIONS "CROSS-EXAMINE (round $rd_i: $rd_a vs $rd_b)" || true
