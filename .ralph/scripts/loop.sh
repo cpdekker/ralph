@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ralph Wiggum - Main Loop Script
 #
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -14,6 +14,7 @@
 #   ./loop.sh my-feature full 100           # Full mode with max 100 total iterations
 #   ./loop.sh my-feature decompose          # Decompose large spec into sub-specs
 #   ./loop.sh my-feature spec               # Spec mode: research→draft→refine→review→signoff
+#   ./loop.sh my-feature research           # Research mode: codebase→web→review→completion
 #
 # Full mode options (via environment variables):
 #   FULL_PLAN_ITERS=3       # Plan iterations per cycle (default: 3)
@@ -36,6 +37,7 @@ source "$SCRIPT_DIR/lib/core.sh"
 source "$SCRIPT_DIR/lib/review.sh"
 source "$SCRIPT_DIR/lib/decompose.sh"
 source "$SCRIPT_DIR/lib/spec_mode.sh"
+source "$SCRIPT_DIR/lib/research_mode.sh"
 source "$SCRIPT_DIR/lib/full_mode.sh"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -52,7 +54,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "research" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -62,7 +64,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -71,7 +73,7 @@ fi
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SPEC_FILE="./.ralph/specs/${SPEC_NAME}.md"
-if [ "$MODE" != "spec" ]; then
+if [ "$MODE" != "spec" ] && [ "$MODE" != "research" ]; then
     if [ ! -f "$SPEC_FILE" ]; then
         echo "Error: Spec file not found: $SPEC_FILE"
         echo "Available specs:"
@@ -87,6 +89,9 @@ if [ "$MODE" != "spec" ]; then
         echo "Copying $SPEC_FILE to $ACTIVE_SPEC"
         cp "$SPEC_FILE" "$ACTIVE_SPEC"
     fi
+elif [ "$MODE" = "research" ]; then
+    ACTIVE_SPEC="./.ralph/specs/active.md"
+    echo "Research mode — research documents will be created in .ralph/references/"
 else
     ACTIVE_SPEC="./.ralph/specs/active.md"
     echo "Spec mode — spec will be created during the draft phase"
@@ -126,6 +131,12 @@ elif [ "$MODE" = "spec" ]; then
     SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
+elif [ "$MODE" = "research" ]; then
+    MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+    RESEARCH_CODEBASE_ITERS=${RESEARCH_CODEBASE_ITERS:-1}
+    RESEARCH_WEB_ITERS=${RESEARCH_WEB_ITERS:-1}
+    RESEARCH_REVIEW_ITERS=${RESEARCH_REVIEW_ITERS:-1}
+    MAX_RESEARCH_CYCLES=${MAX_RESEARCH_CYCLES:-3}
 elif [ "$MODE" = "full" ]; then
     MAX_ITERATIONS=${MAX_ITERATIONS:-100}
     FULL_PLAN_ITERS=${FULL_PLAN_ITERS:-3}
@@ -176,6 +187,8 @@ echo -e "${C_MUTED}  spec${C_RESET}      $SPEC_NAME"
 echo -e "${C_MUTED}  mode${C_RESET}      $MODE"
 if [ "$MODE" = "spec" ]; then
     echo -e "${C_MUTED}  phases${C_RESET}    research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+elif [ "$MODE" = "research" ]; then
+    echo -e "${C_MUTED}  phases${C_RESET}    codebase($RESEARCH_CODEBASE_ITERS) → web($RESEARCH_WEB_ITERS) → review($RESEARCH_REVIEW_ITERS) → completion (max $MAX_RESEARCH_CYCLES cycles)"
 elif [ "$MODE" = "decompose" ]; then
     echo -e "${C_MUTED}  action${C_RESET}    Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
@@ -197,7 +210,18 @@ ralph_separator
 # PROMPT FILE VALIDATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
-if [ "$MODE" = "spec" ]; then
+if [ "$MODE" = "research" ]; then
+    for pf in "./.ralph/prompts/research/codebase.md" "./.ralph/prompts/research/web.md" "./.ralph/prompts/research/review.md" "./.ralph/prompts/research/completion.md"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for research mode)"
+            exit 1
+        fi
+    done
+    if [ ! -f "./.ralph/research_seed.md" ]; then
+        echo "Error: .ralph/research_seed.md not found. Run the research wizard first (node .ralph/run.js <name> research)"
+        exit 1
+    fi
+elif [ "$MODE" = "spec" ]; then
     for pf in "./.ralph/prompts/spec/research.md" "./.ralph/prompts/spec/draft.md" "./.ralph/prompts/spec/refine.md" "./.ralph/prompts/spec/review.md" "./.ralph/prompts/spec/review_fix.md" "./.ralph/prompts/spec/signoff.md"; do
         if [ ! -f "$pf" ]; then
             echo "Error: $pf not found (required for spec mode)"
@@ -341,6 +365,11 @@ fi
 
 if [ "$MODE" = "spec" ]; then
     run_spec_mode
+    exit 0
+fi
+
+if [ "$MODE" = "research" ]; then
+    run_research_mode
     exit 0
 fi
 

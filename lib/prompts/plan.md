@@ -180,6 +180,21 @@ For complex features, track dependencies between items:
 - **Flag high-risk items** - include "Phase 0.6: High-Risk Items" for changes that need extra care
 - **No code samples** - describe *what* to implement, not *how*. The build loop handles implementation. Code blocks bloat the plan and waste context.
 
+### Test-Driven Development (TDD) Structure
+
+**Every implementation task should have tests written BEFORE the implementation.** Structure plan items as test-then-implement pairs:
+
+```markdown
+- [ ] [Simple] Write tests for UserRepository.findById — assert return type, not-found behavior, error handling
+- [ ] [Medium] Implement UserRepository.findById — make tests pass
+```
+
+The test item describes the **expected behavior from the spec** — what the function should do, what it should return, how it should handle errors. The implementation item makes those tests pass.
+
+For `[Simple]` items, the test and implementation can be a single combined item (since build mode handles TDD ordering within a turn). For `[Medium]` and above, separate test and implementation items help prevent tests from being shaped by implementation choices.
+
+**Key principle:** Tests should be derived from the spec requirements, not from how code happens to be structured. They define the contract BEFORE the code exists.
+
 ---
 
 ## Sub-Spec Scope Awareness

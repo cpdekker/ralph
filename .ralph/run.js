@@ -292,6 +292,124 @@ async function specGatherWizard(specName) {
   console.log('');
 }
 
+async function researchGatherWizard(specName) {
+  const seedPath = path.join(rootDir, '.ralph', 'research_seed.md');
+  const referencesDir = path.join(rootDir, '.ralph', 'references');
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const question = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
+
+  const readMultiline = async (prompt) => {
+    console.log(`  ${prompt}`);
+    dim('  (Enter each item on its own line. Empty line to finish.)');
+    const lines = [];
+    while (true) {
+      const line = await question('  > ');
+      if (line.trim() === '') break;
+      lines.push(line.trim());
+    }
+    return lines;
+  };
+
+  header('Research Gather Wizard');
+
+  // Check for references directory
+  if (fs.existsSync(referencesDir)) {
+    const refFiles = fs.readdirSync(referencesDir).filter(f => f !== 'README.md' && !f.startsWith('.'));
+    if (refFiles.length > 0) {
+      console.log(`${c('cyan', `  Existing reference files (${refFiles.length}):`)}`);
+      refFiles.slice(0, 5).forEach(f => console.log(`   • ${f}`));
+      if (refFiles.length > 5) console.log(`   ... and ${refFiles.length - 5} more`);
+      dim('   These will be reviewed and built upon during research.');
+      console.log('');
+    }
+  } else {
+    // Create references directory if it doesn't exist
+    fs.mkdirSync(referencesDir, { recursive: true });
+    dim('  Created .ralph/references/ directory for research output.');
+    console.log('');
+  }
+
+  // Check for existing research_seed.md
+  if (fs.existsSync(seedPath)) {
+    warn('Found existing research_seed.md');
+    const reuse = await question('Skip wizard and continue research? [Y/n]: ');
+    if (reuse.trim().toLowerCase() !== 'n' && reuse.trim().toLowerCase() !== 'no') {
+      success('Reusing existing research_seed.md');
+      console.log('');
+      rl.close();
+      return;
+    }
+    console.log('');
+  }
+
+  // Step 1: What to research
+  console.log(`${c('cyan', '[1/4] Research Topic')}`);
+  dim('  What feature, change, or problem do you want to research? (1-3 sentences)');
+  const topicLines = [];
+  while (true) {
+    const line = await question('  > ');
+    if (line.trim() === '') {
+      if (topicLines.length > 0) break;
+      error('Please enter at least one line.');
+      continue;
+    }
+    topicLines.push(line.trim());
+  }
+  const topic = topicLines.join('\n');
+  console.log('');
+
+  // Step 2: Specific questions
+  console.log(`${c('cyan', '[2/4] Research Questions')}`);
+  dim('  What specific questions do you want answered? (optional)');
+  const questions = await readMultiline('Questions:');
+  console.log('');
+
+  // Step 3: Areas of focus
+  console.log(`${c('cyan', '[3/4] Areas of Focus')}`);
+  dim('  Any specific areas to focus on? (e.g., "security implications", "database performance") (optional)');
+  const focuses = await readMultiline('Focus areas:');
+  console.log('');
+
+  // Step 4: Known context
+  console.log(`${c('cyan', '[4/4] Known Context')}`);
+  dim('  Any context you already have that would help the research? (optional)');
+  const context = await readMultiline('Context:');
+
+  rl.close();
+
+  // Build research_seed.md content
+  let seed = `# Research Seed: ${specName}\n\n`;
+  seed += `## Topic\n${topic}\n\n`;
+
+  if (questions.length > 0) {
+    seed += `## Research Questions\n`;
+    questions.forEach(q => { seed += `- ${q}\n`; });
+    seed += '\n';
+  }
+
+  if (focuses.length > 0) {
+    seed += `## Focus Areas\n`;
+    focuses.forEach(f => { seed += `- ${f}\n`; });
+    seed += '\n';
+  }
+
+  if (context.length > 0) {
+    seed += `## Known Context\n`;
+    context.forEach(ct => { seed += `- ${ct}\n`; });
+    seed += '\n';
+  }
+
+  // Write research_seed.md
+  fs.writeFileSync(seedPath, seed);
+  success('Created .ralph/research_seed.md');
+  console.log('');
+}
+
 function runRalphBackground(spec, mode, iterations, verbose) {
   startupBanner({
     spec,
@@ -512,8 +630,8 @@ async function interactivePrompt(preselectedMode = null) {
 
   let spec = '';
 
-  // Spec mode: always prompt for a name
-  if (preselectedMode === 'spec') {
+  // Spec/research mode: always prompt for a name
+  if (preselectedMode === 'spec' || preselectedMode === 'research') {
     if (availableSpecs.length > 0) {
       console.log('  Existing specs:');
       availableSpecs.forEach((s, i) => {
@@ -582,10 +700,11 @@ async function interactivePrompt(preselectedMode = null) {
     console.log('    6. full       - Full cycle: plan → build → review → check (repeats until complete)');
     console.log('    7. decompose  - Break large spec into ordered sub-specs for full mode');
     console.log('    8. spec       - Create spec interactively: gather → research → draft → review');
+    console.log('    9. research   - Deep research: codebase → web → review → completion');
     console.log('');
 
     while (!mode) {
-      const input = await question('  Select mode [1-8 or name] (default: build): ');
+      const input = await question('  Select mode [1-9 or name] (default: build): ');
       const trimmed = input.trim().toLowerCase();
 
       if (trimmed === '' || trimmed === '2' || trimmed === 'build') {
@@ -604,13 +723,15 @@ async function interactivePrompt(preselectedMode = null) {
         mode = 'decompose';
       } else if (trimmed === '8' || trimmed === 'spec') {
         mode = 'spec';
+      } else if (trimmed === '9' || trimmed === 'research') {
+        mode = 'research';
       } else {
-        error('Invalid selection. Enter 1-8 or mode name.');
+        error('Invalid selection. Enter 1-9 or mode name.');
       }
     }
   }
 
-  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'decompose' ? 1 : (mode === 'spec' ? 8 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10)))));
+  const defaultIterations = mode === 'plan' ? 5 : (mode === 'debug' ? 1 : (mode === 'decompose' ? 1 : (mode === 'spec' ? 8 : (mode === 'research' ? 10 : (mode === 'review-fix' ? 5 : (mode === 'full' ? 10 : 10))))));
   const iterLabel = mode === 'full' ? 'max cycles' : 'iterations';
 
   if (mode === 'debug') {
@@ -655,6 +776,10 @@ async function interactivePrompt(preselectedMode = null) {
     await specGatherWizard(spec);
   }
 
+  if (mode === 'research') {
+    await researchGatherWizard(spec);
+  }
+
   if (background) {
     runRalphBackground(spec, mode, iterations, verbose);
   } else {
@@ -680,15 +805,16 @@ const debugFlag = args.includes('--debug');
 const fullFlag = args.includes('--full') || args.includes('--yolo');
 const decomposeFlag = args.includes('--decompose');
 const specFlag = args.includes('--spec');
+const researchFlag = args.includes('--research');
 const filteredArgs = args.filter(a =>
   a !== '--verbose' && a !== '-v' &&
   a !== '--background' && a !== '-b' &&
   a !== '--no-background' && a !== '--foreground' && a !== '-f' &&
-  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo' && a !== '--decompose' && a !== '--spec'
+  a !== '--plan' && a !== '--build' && a !== '--review' && a !== '--review-fix' && a !== '--debug' && a !== '--full' && a !== '--yolo' && a !== '--decompose' && a !== '--spec' && a !== '--research'
 );
 
 // Determine preselected mode from flags
-const preselectedMode = specFlag ? 'spec' : (decomposeFlag ? 'decompose' : (fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null)))))));
+const preselectedMode = researchFlag ? 'research' : (specFlag ? 'spec' : (decomposeFlag ? 'decompose' : (fullFlag ? 'full' : (debugFlag ? 'debug' : (reviewFixFlag ? 'review-fix' : (planFlag ? 'plan' : (buildFlag ? 'build' : (reviewFlag ? 'review' : null))))))));
 
 // No arguments - interactive mode
 if (filteredArgs.length === 0) {
@@ -704,10 +830,12 @@ if (filteredArgs.length === 0) {
 
   if (filteredArgs[1] === 'spec') {
     mode = 'spec';
+  } else if (filteredArgs[1] === 'research') {
+    mode = 'research';
   }
 
-  // Validate spec file exists (skip for spec mode)
-  if (mode !== 'spec' && !validateSpec(spec)) {
+  // Validate spec file exists (skip for spec and research mode)
+  if (mode !== 'spec' && mode !== 'research' && !validateSpec(spec)) {
     error(`Spec file not found: .ralph/specs/${spec}.md`);
     const availableSpecs = getAvailableSpecs();
     if (availableSpecs.length > 0) {
@@ -722,6 +850,12 @@ if (filteredArgs.length === 0) {
   if (filteredArgs[1] === 'spec') {
     mode = 'spec';
     iterations = 8;
+    if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
+      iterations = parseInt(filteredArgs[2]);
+    }
+  } else if (filteredArgs[1] === 'research') {
+    mode = 'research';
+    iterations = 10;
     if (filteredArgs[2] && isNumeric(filteredArgs[2])) {
       iterations = parseInt(filteredArgs[2]);
     }
@@ -770,6 +904,18 @@ if (filteredArgs.length === 0) {
 
   if (mode === 'spec') {
     specGatherWizard(spec).then(() => {
+      if (useBackground) {
+        runRalphBackground(spec, mode, iterations, verbose);
+      } else {
+        setupWindowsSignalHandler();
+        runRalph(spec, mode, iterations, verbose);
+      }
+    }).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  } else if (mode === 'research') {
+    researchGatherWizard(spec).then(() => {
       if (useBackground) {
         runRalphBackground(spec, mode, iterations, verbose);
       } else {

@@ -39,16 +39,25 @@ Look at the complexity tags in the implementation plan:
 **For `[Medium]`, `[Complex]`, or `[RISK]` items:**
 - ONE item per turn, as these require more focus and debugging
 
-### Execution Steps
+### Execution Steps — Test-Driven Development
+
+Follow a TDD approach: **write tests first**, then implement to make them pass.
 
 1. **Pick item(s)** from `.ralph/implementation_plan.md` — choose highest priority incomplete task(s)
 2. **Check dependencies** — ensure prerequisite items are marked `[x]` complete
 3. **Search before implementing** — use subagents to verify the code doesn't already exist
-4. **Implement completely** — no placeholders, no stubs, no "TODO" comments
-5. **Run tests** for the code you changed — fix any failures before proceeding
-   - **Test optimization**: Before running tests, check what files you modified this turn (`git diff --name-only`). If ALL your changes are limited to `.md` or `.txt` files (documentation, plans, status updates), skip test execution entirely — tests validate code, not documentation. Only run tests when you've modified code files (`.ts`, `.js`, `.py`, `.go`, `.sh`, etc.).
-   - **Test scaling**: Use targeted tests (affected modules only) for most iterations. Only run the full test suite on the FINAL iteration before phase transition (i.e., when ALL plan items are complete). Mid-cycle full suite runs waste 60-80% of iteration time.
-6. **Update `.ralph/implementation_plan.md`** — mark item(s) complete with `[x]`
+4. **Write tests first** — Based on the spec requirements (not implementation details), write tests that assert the expected behavior:
+   - What inputs should produce what outputs?
+   - What error conditions should be handled?
+   - What side effects should occur?
+   - Derive test cases from `.ralph/specs/active.md`, NOT from how you plan to implement
+   - Tests should describe the *contract* — the expected interface, return values, and behavior
+5. **Run tests — expect them to fail** — Verify your tests fail for the right reason (missing function, wrong return value, etc., NOT syntax errors in the tests themselves). Fix any test syntax issues before proceeding.
+   - **Test optimization**: If ALL your changes are limited to `.md` or `.txt` files (documentation, plans, status updates), skip test execution entirely. Only run tests when you've modified code files.
+   - **Test scaling**: Use targeted tests (affected modules only) for most iterations. Only run the full test suite on the FINAL iteration before phase transition (i.e., when ALL plan items are complete).
+6. **Implement to make tests pass** — no placeholders, no stubs, no "TODO" comments. Write the minimum code needed to make your tests green.
+7. **Run tests again — expect them to pass** — If tests fail, fix the implementation (not the tests). Only modify tests if they contain genuine bugs (wrong assertions, setup errors), NOT to accommodate implementation shortcuts.
+8. **Update `.ralph/implementation_plan.md`** — mark item(s) complete with `[x]`
 7. **Commit and push**:
    ```bash
    git add <specific-files-you-changed> .ralph/progress.txt .ralph/guardrails.md
@@ -61,10 +70,12 @@ Look at the complexity tags in the implementation plan:
 
 ## Rollback & Recovery
 
-### If Tests Fail
+### If Tests Fail After Implementation
 
-1. **First attempt**: Analyze the failure and fix the issue within this turn
-2. **Second attempt**: If the fix doesn't work, try a different approach
+Tests failing means the implementation is wrong, not the tests (unless the tests have genuine bugs). Do NOT weaken or remove test assertions to make them pass.
+
+1. **First attempt**: Analyze the failure and fix the implementation within this turn
+2. **Second attempt**: If the fix doesn't work, try a different implementation approach
 3. **Third attempt**: If still failing after 3 fix attempts:
    - **STOP trying** — do not continue with different approaches indefinitely
    - Revert your changes: `git checkout -- .`

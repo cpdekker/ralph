@@ -214,6 +214,90 @@ FOOTEREOF
     echo -e "  ${C_ACCENT}📋${C_RESET} Created ${C_HIGHLIGHT}.ralph/user-intervention.md${C_RESET} — review and provide answers to unblock"
 }
 
+# Run research completion check to determine if research is sufficient.
+# Returns: 0 if complete, 1 if not complete
+run_research_completion_check() {
+    echo ""
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo -e "${C_WARNING}  🔍 RESEARCH COMPLETION CHECK - Is research sufficient?${C_RESET}"
+    echo -e "${C_WARNING}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${C_RESET}"
+    echo ""
+
+    local check_log="$TEMP_DIR/research_completion.log"
+    local check_result
+
+    if [ "$VERBOSE" = true ]; then
+        check_result=$(cat "./.ralph/prompts/research/completion.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>&1 | tee "$check_log")
+    else
+        echo -e "  ${C_PRIMARY}⏳${C_RESET} Checking if research is complete..."
+
+        check_result=$(cat "./.ralph/prompts/research/completion.md" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=json 2>"$check_log")
+    fi
+
+    # Parse Claude's JSON response using jq
+    local json_text
+    json_text=$(echo "$check_result" | jq -r '.result // empty' 2>/dev/null)
+    if [ -z "$json_text" ]; then
+        json_text="$check_result"
+    fi
+
+    # Strip markdown code fences if present
+    json_text=$(echo "$json_text" | sed '/^```/d')
+
+    # Save the full JSON for the research_mode.sh to inspect
+    echo "$json_text" > "./.ralph/research_completion.json"
+
+    local is_complete=$(echo "$json_text" | jq -r '.complete // false' 2>/dev/null)
+
+    # Fallback: if jq failed to extract, try grep
+    if [ -z "$is_complete" ] || [ "$is_complete" = "null" ]; then
+        if echo "$json_text" | grep -q '"complete"[[:space:]]*:[[:space:]]*true'; then
+            is_complete="true"
+        else
+            is_complete="false"
+        fi
+    fi
+
+    local confidence=$(echo "$json_text" | jq -r '.confidence // empty' 2>/dev/null)
+    local recommendation=$(echo "$json_text" | jq -r '.recommendation // empty' 2>/dev/null)
+    local quality_score=$(echo "$json_text" | jq -r '.quality_score // empty' 2>/dev/null)
+    local blocking_gaps=$(echo "$json_text" | jq -r '.blocking_gaps // empty' 2>/dev/null)
+    local docs_count=$(echo "$json_text" | jq -r '.documents_count // empty' 2>/dev/null)
+
+    if [ "$is_complete" = "true" ]; then
+        echo ""
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        echo -e "${C_SUCCESS}  ✅ RESEARCH COMPLETE!${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_SUCCESS}  Confidence: ${confidence}${C_RESET}"
+        [ -n "$quality_score" ] && echo -e "${C_SUCCESS}  Quality: ${quality_score}/5${C_RESET}"
+        [ -n "$docs_count" ] && echo -e "${C_SUCCESS}  Documents: ${docs_count}${C_RESET}"
+        echo -e "${C_SUCCESS}════════════════════════════════════════════════════════════${C_RESET}"
+        [ -n "$recommendation" ] && echo -e "  ${C_PRIMARY}$recommendation${C_RESET}"
+        echo ""
+
+        # Stage the completion result
+        git add .ralph/research_completion.json 2>/dev/null
+        return 0  # Complete
+    else
+        echo ""
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        echo -e "${C_WARNING}  ⚠ Research not yet complete${C_RESET}"
+        [ -n "$confidence" ] && echo -e "${C_WARNING}  Confidence: ${confidence}${C_RESET}"
+        [ -n "$blocking_gaps" ] && echo -e "${C_WARNING}  Blocking gaps: ${blocking_gaps}${C_RESET}"
+        echo -e "${C_WARNING}────────────────────────────────────────────────────────────${C_RESET}"
+        [ -n "$recommendation" ] && echo -e "  ${C_PRIMARY}$recommendation${C_RESET}"
+        echo ""
+
+        # Stage the completion result
+        git add .ralph/research_completion.json 2>/dev/null
+        return 1  # Not complete
+    fi
+}
+
 # Run spec signoff check to determine if a spec is ready for implementation.
 # Returns: 0 if ready, 1 if not ready
 run_spec_signoff_check() {
