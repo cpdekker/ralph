@@ -489,6 +489,15 @@ USERREVIEWEOF
         echo -e "  ${C_SUCCESS}✓${C_RESET} Review phase complete"
 
         # ─────────────────────────────────────────────────────────────────────
+        # REVIEW DEBATE PHASE (Socratic cross-examination of review findings)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ "${REVIEW_DEBATE_ENABLED:-true}" = "true" ]; then
+            run_review_debate_phase
+        else
+            echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Review debate disabled — skipping"
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
         # REVIEW-FIX PHASE
         # ─────────────────────────────────────────────────────────────────────
 

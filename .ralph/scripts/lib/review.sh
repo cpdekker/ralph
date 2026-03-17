@@ -31,6 +31,111 @@ get_next_review_specialist() {
     fi
 }
 
+# Run the Socratic cross-examination debate phase for code review.
+# Called after specialist reviews are complete, before review-fix.
+# Reads review.md findings, plans pairings, runs cross-examination rounds, synthesizes.
+run_review_debate_phase() {
+    local debate_dir="./.ralph/review_debate"
+    local max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
+
+    # Guard: only run if review.md exists and has findings
+    local review_file="./.ralph/review.md"
+    if [ ! -f "$review_file" ]; then
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  No review.md found — skipping debate"
+        return
+    fi
+
+    local total_findings=$(grep -c '❌\|⚠️\|💡' "$review_file" 2>/dev/null) || total_findings=0
+    if [ "$total_findings" -eq 0 ]; then
+        echo -e "  ${C_SUCCESS}✓${C_RESET} No review findings to debate — skipping"
+        return
+    fi
+
+    # Calculate iteration count for display: setup(1) + rounds(N) + synthesize(1)
+    local debate_total=$((2 + max_rounds))
+    print_phase_banner "REVIEW DEBATE" $debate_total
+
+    # Clean up previous debate state
+    rm -rf "$debate_dir"
+    mkdir -p "$debate_dir"
+
+    echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Review has $total_findings findings — planning cross-examination"
+    echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Max pairing rounds: $max_rounds"
+
+    # ── SUB-PHASE: SETUP (moderator plans pairings) ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Debate Setup ──${C_RESET}"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "./.ralph/prompts/review/debate/setup.md" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Debate setup failed"
+        if check_circuit_breaker; then
+            return
+        fi
+    fi
+
+    # Parse pairings from debate_plan.md
+    local pairings_line=""
+    if [ -f "$debate_dir/debate_plan.md" ]; then
+        pairings_line=$(grep '^## PAIRINGS=' "$debate_dir/debate_plan.md" 2>/dev/null | sed 's/^## PAIRINGS=//')
+    fi
+
+    if [ -z "$pairings_line" ]; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Could not parse pairings from debate_plan.md — falling back to security:api,qa:antagonist,db:perf"
+        pairings_line="security:api,qa:antagonist,db:perf"
+    fi
+
+    # Split into array of pairings
+    IFS=',' read -ra DEBATE_PAIRINGS <<< "$pairings_line"
+    local num_pairings=${#DEBATE_PAIRINGS[@]}
+
+    # Cap at max_rounds
+    if [ "$num_pairings" -gt "$max_rounds" ]; then
+        num_pairings=$max_rounds
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Capping at $max_rounds rounds (${#DEBATE_PAIRINGS[@]} planned)"
+    fi
+
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Debate setup complete — $num_pairings pairing rounds planned"
+
+    # ── SUB-PHASE: CROSS-EXAMINATION ROUNDS ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Cross-Examination ──${C_RESET}"
+
+    local round=0
+    while [ "$round" -lt "$num_pairings" ]; do
+        round=$((round + 1))
+        local pairing="${DEBATE_PAIRINGS[$((round - 1))]}"
+        local specialist_a="${pairing%%:*}"
+        local specialist_b="${pairing##*:}"
+
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Round $round/$num_pairings: $specialist_a vs $specialist_b"
+
+        if ! run_single_iteration "./.ralph/prompts/review/debate/cross_examine.md" $TOTAL_ITERATIONS "CROSS-EXAMINE (round $round: $specialist_a vs $specialist_b)"; then
+            echo -e "  ${C_ERROR}✗${C_RESET} Cross-examination round $round failed"
+            if check_circuit_breaker; then
+                return
+            fi
+        fi
+    done
+
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Cross-examination complete ($num_pairings rounds)"
+
+    # ── SUB-PHASE: SYNTHESIZE (merge debate findings into review.md) ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Synthesis ──${C_RESET}"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "./.ralph/prompts/review/debate/synthesize.md" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE"; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Synthesis failed"
+        if check_circuit_breaker; then
+            return
+        fi
+    fi
+
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Review debate complete — review.md updated with debate findings"
+}
+
 # Run completion check to determine if the spec is fully implemented.
 # Invokes completion_check.md prompt and parses the JSON response.
 # Returns: 0 if complete, 1 if not complete, 2 if blocked on user

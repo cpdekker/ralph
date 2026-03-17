@@ -164,10 +164,11 @@ persist_iteration_log() {
     local debate_subphase=""
     local debate_persona=""
     case "$phase_display" in
-        DEBATE\ SETUP)      debate_subphase="SETUP" ;;
-        CRITIQUE\ \(*)      debate_subphase="CRITIQUE"; debate_persona=$(echo "$phase_display" | sed 's/CRITIQUE (\(.*\))/\1/') ;;
-        CHALLENGE\ \(*)     debate_subphase="CHALLENGE"; debate_persona=$(echo "$phase_display" | sed 's/CHALLENGE (\(.*\))/\1/') ;;
-        DEBATE\ SYNTHESIZE) debate_subphase="SYNTHESIZE" ;;
+        DEBATE\ SETUP)       debate_subphase="SETUP" ;;
+        CRITIQUE\ \(*)       debate_subphase="CRITIQUE"; debate_persona=$(echo "$phase_display" | sed 's/CRITIQUE (\(.*\))/\1/') ;;
+        CHALLENGE\ \(*)      debate_subphase="CHALLENGE"; debate_persona=$(echo "$phase_display" | sed 's/CHALLENGE (\(.*\))/\1/') ;;
+        CROSS-EXAMINE\ \(*)  debate_subphase="CROSS-EXAMINE"; debate_persona=$(echo "$phase_display" | sed 's/.*: \(.*\))/\1/') ;;
+        DEBATE\ SYNTHESIZE)  debate_subphase="SYNTHESIZE" ;;
     esac
 
     # Git-based metrics

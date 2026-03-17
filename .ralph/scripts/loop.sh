@@ -112,6 +112,8 @@ elif [ "$MODE" = "review" ]; then
     SETUP_PROMPT_FILE="./.ralph/prompts/review/setup.md"
     PROMPT_FILE="./.ralph/prompts/review/general.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+    REVIEW_DEBATE_ENABLED=${REVIEW_DEBATE_ENABLED:-true}
+    REVIEW_DEBATE_ROUNDS=${REVIEW_DEBATE_ROUNDS:-3}
 elif [ "$MODE" = "review-fix" ]; then
     PROMPT_FILE="./.ralph/prompts/review/fix.md"
     MAX_ITERATIONS=${MAX_ITERATIONS:-5}
@@ -145,6 +147,8 @@ elif [ "$MODE" = "full" ]; then
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-15}
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}
     FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}
+    REVIEW_DEBATE_ENABLED=${REVIEW_DEBATE_ENABLED:-true}
+    REVIEW_DEBATE_ROUNDS=${REVIEW_DEBATE_ROUNDS:-3}
 else
     MODE="build"
     PROMPT_FILE="./.ralph/prompts/build.md"
@@ -187,7 +191,7 @@ ralph_header "Ralph Session"
 echo -e "${C_MUTED}  spec${C_RESET}      $SPEC_NAME"
 echo -e "${C_MUTED}  mode${C_RESET}      $MODE"
 if [ "$MODE" = "spec" ]; then
-    local debate_iters=5
+    debate_iters=5
     [ "$SPEC_DEBATE_CHALLENGE" = "true" ] && debate_iters=8
     echo -e "${C_MUTED}  phases${C_RESET}    research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → debate($debate_iters) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
     echo -e "${C_MUTED}  debate${C_RESET}     challenge=$SPEC_DEBATE_CHALLENGE"
@@ -196,14 +200,18 @@ elif [ "$MODE" = "research" ]; then
 elif [ "$MODE" = "decompose" ]; then
     echo -e "${C_MUTED}  action${C_RESET}    Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo -e "${C_MUTED}  cycle${C_RESET}     plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
+    echo -e "${C_MUTED}  cycle${C_RESET}     plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → debate → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo -e "${C_MUTED}  max${C_RESET}       $MAX_ITERATIONS cycles"
+    echo -e "${C_MUTED}  debate${C_RESET}     enabled=$REVIEW_DEBATE_ENABLED rounds=$REVIEW_DEBATE_ROUNDS"
 elif [ "$MODE" = "debug" ]; then
     ralph_warn "DEBUG MODE - No commits will be made"
 else
     [ -n "$SETUP_PROMPT_FILE" ] && echo -e "${C_MUTED}  setup${C_RESET}     $SETUP_PROMPT_FILE"
     echo -e "${C_MUTED}  prompt${C_RESET}    $PROMPT_FILE"
     [ $MAX_ITERATIONS -gt 0 ] && echo -e "${C_MUTED}  max${C_RESET}       $MAX_ITERATIONS iterations"
+    if [ "$MODE" = "review" ]; then
+        echo -e "${C_MUTED}  debate${C_RESET}     enabled=$REVIEW_DEBATE_ENABLED rounds=$REVIEW_DEBATE_ROUNDS"
+    fi
 fi
 echo -e "${C_MUTED}  branch${C_RESET}    $CURRENT_BRANCH"
 echo -e "${C_MUTED}  verbose${C_RESET}   $VERBOSE"
@@ -253,6 +261,14 @@ elif [ "$MODE" = "full" ]; then
         for pf in "./.ralph/prompts/spec_select.md" "./.ralph/prompts/master_completion_check.md"; do
             if [ ! -f "$pf" ]; then
                 echo "Error: $pf not found (required for decomposed full mode)"
+                exit 1
+            fi
+        done
+    fi
+    if [ "${REVIEW_DEBATE_ENABLED:-true}" = "true" ]; then
+        for pf in "./.ralph/prompts/review/debate/setup.md" "./.ralph/prompts/review/debate/cross_examine.md" "./.ralph/prompts/review/debate/synthesize.md"; do
+            if [ ! -f "$pf" ]; then
+                echo "Error: $pf not found (required for review debate)"
                 exit 1
             fi
         done
@@ -562,6 +578,17 @@ while true; do
     # Update checkpoint
     save_state "$MODE" "$ITERATION" "Completed"
 done
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# POST-LOOP REVIEW DEBATE (standalone review mode only)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+if [ "$MODE" = "review" ] && [ "${REVIEW_DEBATE_ENABLED:-false}" = "true" ]; then
+    TOTAL_ITERATIONS=$ITERATION  # Carry forward for debate iterations
+    run_review_debate_phase
+    stage_ralph_memory
+    git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+fi
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FINAL SUMMARY
