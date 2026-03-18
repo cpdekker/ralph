@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|insights] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research|insights] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -63,7 +63,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "insights" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "research" ] || [ "$arg" = "insights" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -73,7 +73,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -89,7 +89,7 @@ fi
 
 # Verify spec file exists (skip for spec mode — spec doesn't exist yet)
 SPEC_FILE="./.ralph/specs/${SPEC_NAME}.md"
-if [ "$MODE" != "spec" ] && [ "$MODE" != "insights" ]; then
+if [ "$MODE" != "spec" ] && [ "$MODE" != "research" ] && [ "$MODE" != "insights" ]; then
     if [ ! -f "$SPEC_FILE" ]; then
         echo "Error: Spec file not found: $SPEC_FILE"
         echo "Available specs:"
@@ -107,7 +107,11 @@ if [ "$MODE" != "spec" ] && [ "$MODE" != "insights" ]; then
     fi
 else
     ACTIVE_SPEC="./.ralph/specs/active.md"
-    echo "Spec mode — spec will be created during the draft phase"
+    if [ "$MODE" = "research" ]; then
+        echo "Research mode — no spec required, using research_seed.md"
+    else
+        echo "Spec mode — spec will be created during the draft phase"
+    fi
 fi
 
 # Circuit breaker settings
@@ -150,6 +154,12 @@ elif [ "$MODE" = "spec" ]; then
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
     SPEC_DEBATE_CHALLENGE=${SPEC_DEBATE_CHALLENGE:-true}
+elif [ "$MODE" = "research" ]; then
+    # Research mode: codebase → web → review → completion check cycles
+    MAX_ITERATIONS=${MAX_ITERATIONS:-3}
+    RESEARCH_CODEBASE_ITERS=1
+    RESEARCH_WEB_ITERS=1
+    RESEARCH_REVIEW_ITERS=1
 elif [ "$MODE" = "insights" ]; then
     # Insights mode: run analysis on existing iteration logs
     MAX_ITERATIONS=1
@@ -208,6 +218,9 @@ if [ "$MODE" = "spec" ]; then
     [ "$SPEC_DEBATE_CHALLENGE" = "true" ] && debate_iters=8
     echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → debate($debate_iters) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
     echo "Debate:  challenge=$SPEC_DEBATE_CHALLENGE"
+elif [ "$MODE" = "research" ]; then
+    echo "Phases:  [codebase + web](parallel) → review($RESEARCH_REVIEW_ITERS) → completion"
+    echo "Cycles:  $MAX_ITERATIONS max"
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
@@ -247,6 +260,19 @@ if [ "$MODE" = "spec" ]; then
     # Verify spec_seed.md exists
     if [ ! -f "./.ralph/spec_seed.md" ]; then
         echo "Error: .ralph/spec_seed.md not found. Run the spec wizard first (ralph spec <name>)"
+        exit 1
+    fi
+elif [ "$MODE" = "research" ]; then
+    # Research mode uses its own set of prompt files
+    for pf in "$(resolve_prompt research/codebase.md)" "$(resolve_prompt research/web.md)" "$(resolve_prompt research/review.md)" "$(resolve_prompt research/completion.md)"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for research mode)"
+            exit 1
+        fi
+    done
+    # Verify research_seed.md exists
+    if [ ! -f "./.ralph/research_seed.md" ]; then
+        echo "Error: .ralph/research_seed.md not found. Run the research wizard first (ralph research <name>)"
         exit 1
     fi
 elif [ "$MODE" = "insights" ]; then
@@ -2030,6 +2056,225 @@ if [ "$MODE" = "insights" ]; then
     echo ""
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     echo -e "\033[1;32m  Insights analysis complete in $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo ""
+
+    exit 0
+fi
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESEARCH MODE - Runs codebase → web → review → completion check cycles
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ "$MODE" = "research" ]; then
+    TOTAL_ITERATIONS=0
+    RESEARCH_COMPLETE=false
+    CYCLE=0
+
+    echo ""
+    echo -e "\033[1;36m╔════════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;36m║              RESEARCH MODE                                 ║\033[0m"
+    echo -e "\033[1;36m╠════════════════════════════════════════════════════════════╣\033[0m"
+    echo -e "\033[1;36m║  [codebase + web] → review → completion check              ║\033[0m"
+    echo -e "\033[1;36m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+
+    while [ $CYCLE -lt $MAX_ITERATIONS ] && [ "$RESEARCH_COMPLETE" = false ]; do
+        CYCLE=$((CYCLE + 1))
+
+        echo ""
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo -e "\033[1;36m  RESEARCH CYCLE $CYCLE / $MAX_ITERATIONS\033[0m"
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 1+2: CODEBASE ANALYSIS + WEB RESEARCH (parallel)
+        # ─────────────────────────────────────────────────────────────────────
+        echo ""
+        echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
+        echo -e "\033[1;36m│  PARALLEL RESEARCH - Codebase + Web simultaneously         │\033[0m"
+        echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+        echo ""
+
+        PARALLEL_RESEARCH_START=$(date +%s)
+
+        # Track iteration numbers for logging
+        CODEBASE_ITER_NUM=$((TOTAL_ITERATIONS + 1))
+        WEB_ITER_NUM=$((TOTAL_ITERATIONS + 2))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 2))
+
+        CODEBASE_LOG="$TEMP_DIR/iteration_${CODEBASE_ITER_NUM}.log"
+        WEB_LOG="$TEMP_DIR/iteration_${WEB_ITER_NUM}.log"
+
+        CODEBASE_PROMPT="$(resolve_prompt research/codebase.md)"
+        WEB_PROMPT="$(resolve_prompt research/web.md)"
+
+        # Launch codebase analysis in background
+        echo -e "  \033[1;34m🚀 Launching: Codebase Analysis\033[0m"
+        cat "$CODEBASE_PROMPT" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$CODEBASE_LOG" 2>&1 &
+        CODEBASE_PID=$!
+
+        # Launch web research in background
+        echo -e "  \033[1;35m🚀 Launching: Web Research\033[0m"
+        cat "$WEB_PROMPT" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$WEB_LOG" 2>&1 &
+        WEB_PID=$!
+
+        echo ""
+        echo -e "  \033[1;36m⏳\033[0m Waiting for both research agents..."
+        echo ""
+
+        # Wait with live status display
+        RESEARCH_ALL_DONE=false
+        while ! $RESEARCH_ALL_DONE; do
+            RESEARCH_ALL_DONE=true
+            status_line="  "
+
+            if ps -p $CODEBASE_PID > /dev/null 2>&1; then
+                RESEARCH_ALL_DONE=false
+                status_line="${status_line}\033[1;34m⟳ Codebase\033[0m  "
+            else
+                status_line="${status_line}\033[1;32m✓ Codebase\033[0m  "
+            fi
+
+            if ps -p $WEB_PID > /dev/null 2>&1; then
+                RESEARCH_ALL_DONE=false
+                status_line="${status_line}\033[1;35m⟳ Web\033[0m  "
+            else
+                status_line="${status_line}\033[1;32m✓ Web\033[0m  "
+            fi
+
+            printf "\r${status_line}"
+            if ! $RESEARCH_ALL_DONE; then
+                sleep 2
+            fi
+        done
+        printf "\r                                                                              \r"
+
+        # Collect exit codes
+        wait $CODEBASE_PID
+        CODEBASE_EXIT=$?
+        wait $WEB_PID
+        WEB_EXIT=$?
+
+        PARALLEL_RESEARCH_END=$(date +%s)
+        PARALLEL_RESEARCH_DURATION=$((PARALLEL_RESEARCH_END - PARALLEL_RESEARCH_START))
+
+        if [ $CODEBASE_EXIT -eq 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m Codebase analysis completed successfully"
+            CONSECUTIVE_FAILURES=0
+        else
+            echo -e "  \033[1;31m✗\033[0m Codebase analysis failed (exit code $CODEBASE_EXIT)"
+            echo "    Log: $CODEBASE_LOG"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        if [ $WEB_EXIT -eq 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m Web research completed successfully"
+            CONSECUTIVE_FAILURES=0
+        else
+            echo -e "  \033[1;31m✗\033[0m Web research failed (exit code $WEB_EXIT)"
+            echo "    Log: $WEB_LOG"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        echo ""
+        echo -e "  \033[1;36m⏱\033[0m  Parallel research took $(format_duration $PARALLEL_RESEARCH_DURATION)"
+
+        # Capture iteration logs for both
+        capture_iteration_summary "$CODEBASE_LOG" "$CODEBASE_ITER_NUM" "CODEBASE" "$CODEBASE_EXIT" "$PARALLEL_RESEARCH_START" ""
+        capture_iteration_summary "$WEB_LOG" "$WEB_ITER_NUM" "WEB" "$WEB_EXIT" "$PARALLEL_RESEARCH_START" ""
+        persist_iteration_log "$CODEBASE_LOG" "$CODEBASE_ITER_NUM" "CODEBASE" "$CODEBASE_EXIT" "$PARALLEL_RESEARCH_START" ""
+        persist_iteration_log "$WEB_LOG" "$WEB_ITER_NUM" "WEB" "$WEB_EXIT" "$PARALLEL_RESEARCH_START" ""
+
+        # Push any changes from both agents
+        git add -A 2>/dev/null || true
+        git commit -m "research: codebase + web analysis (parallel)" 2>/dev/null || true
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || git push -u origin "$CURRENT_BRANCH" 2>/dev/null || true
+
+        # Check circuit breaker if both failed
+        if [ $CODEBASE_EXIT -ne 0 ] && [ $WEB_EXIT -ne 0 ]; then
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 3: REVIEW
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "RESEARCH REVIEW" $RESEARCH_REVIEW_ITERS
+
+        REVIEW_ITERATION=0
+        while [ $REVIEW_ITERATION -lt $RESEARCH_REVIEW_ITERS ]; do
+            REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "$(resolve_prompt research/review.md)" $TOTAL_ITERATIONS "REVIEW ($REVIEW_ITERATION/$RESEARCH_REVIEW_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Research review failed"
+                if check_circuit_breaker; then
+                    break
+                fi
+            fi
+        done
+
+        echo -e "  \033[1;32m✓\033[0m Research review complete"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 4: COMPLETION CHECK
+        # ─────────────────────────────────────────────────────────────────────
+        echo ""
+        echo -e "  \033[1;35m── Completion Check ──\033[0m"
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        COMPLETION_OUTPUT="$TEMP_DIR/research_completion_${CYCLE}.txt"
+        if run_single_iteration "$(resolve_prompt research/completion.md)" $TOTAL_ITERATIONS "COMPLETION CHECK"; then
+            # Check for completion JSON in the research output
+            # The completion prompt outputs JSON with "complete": true/false
+            LAST_OUTPUT="$TEMP_DIR/output_${TOTAL_ITERATIONS}.txt"
+            if [ -f "$LAST_OUTPUT" ]; then
+                if grep -q '"complete"[[:space:]]*:[[:space:]]*true' "$LAST_OUTPUT" 2>/dev/null; then
+                    RESEARCH_COMPLETE=true
+                    echo -e "  \033[1;32m✓\033[0m Research deemed complete"
+                else
+                    echo -e "  \033[1;33m⚠\033[0m Research needs more work — continuing to next cycle"
+                fi
+            else
+                echo -e "  \033[1;33m⚠\033[0m Could not read completion output — continuing to next cycle"
+            fi
+        else
+            echo -e "  \033[1;31m✗\033[0m Completion check failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    # Calculate final total elapsed time
+    FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+    FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+
+    # Clean up state file on completion
+    rm -f "$STATE_FILE"
+
+    echo ""
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    if [ "$RESEARCH_COMPLETE" = true ]; then
+        echo -e "\033[1;32m  Research complete in $CYCLE cycle(s), $TOTAL_ITERATIONS iteration(s)\033[0m"
+        echo -e "\033[1;32m  Output: .ralph/references/\033[0m"
+        echo -e "\033[1;32m  Next: ralph spec $SPEC_NAME (to create a spec from research)\033[0m"
+    else
+        echo -e "\033[1;33m  Research stopped after $CYCLE cycle(s) (max reached)\033[0m"
+        echo -e "\033[1;33m  Review .ralph/references/ and .ralph/research_gaps.md\033[0m"
+        echo -e "\033[1;33m  Run research mode again to continue\033[0m"
+    fi
+    echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m  Errors: ${ERROR_COUNT:-0}\033[0m"
     echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
     echo ""
 
