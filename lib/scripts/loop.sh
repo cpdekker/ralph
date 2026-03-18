@@ -1,5 +1,5 @@
 #!/bin/bash
-# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|insights] [max_iterations] [--verbose]
+# Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research|insights] [max_iterations] [--verbose]
 # Examples:
 #   ./loop.sh my-feature                    # Build mode, 10 iterations, quiet
 #   ./loop.sh my-feature plan               # Plan mode, 5 iterations, quiet
@@ -63,7 +63,7 @@ for arg in "$@"; do
         VERBOSE=true
     elif [ -z "$SPEC_NAME" ]; then
         SPEC_NAME="$arg"
-    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "insights" ]); then
+    elif [ -z "$MODE" ] && ([ "$arg" = "plan" ] || [ "$arg" = "build" ] || [ "$arg" = "review" ] || [ "$arg" = "review-fix" ] || [ "$arg" = "debug" ] || [ "$arg" = "full" ] || [ "$arg" = "decompose" ] || [ "$arg" = "spec" ] || [ "$arg" = "research" ] || [ "$arg" = "insights" ]); then
         MODE="$arg"
     elif [ -z "$MAX_ITERATIONS" ] && [[ "$arg" =~ ^[0-9]+$ ]]; then
         MAX_ITERATIONS="$arg"
@@ -73,7 +73,7 @@ done
 # First argument is required: spec name
 if [ -z "$SPEC_NAME" ]; then
     echo "Error: Spec name is required"
-    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec] [max_iterations] [--verbose]"
+    echo "Usage: ./loop.sh <spec-name> [plan|build|review|review-fix|debug|full|decompose|spec|research] [max_iterations] [--verbose]"
     exit 1
 fi
 
@@ -89,7 +89,7 @@ fi
 
 # Verify spec file exists (skip for spec mode — spec doesn't exist yet)
 SPEC_FILE="./.ralph/specs/${SPEC_NAME}.md"
-if [ "$MODE" != "spec" ] && [ "$MODE" != "insights" ]; then
+if [ "$MODE" != "spec" ] && [ "$MODE" != "research" ] && [ "$MODE" != "insights" ]; then
     if [ ! -f "$SPEC_FILE" ]; then
         echo "Error: Spec file not found: $SPEC_FILE"
         echo "Available specs:"
@@ -107,7 +107,11 @@ if [ "$MODE" != "spec" ] && [ "$MODE" != "insights" ]; then
     fi
 else
     ACTIVE_SPEC="./.ralph/specs/active.md"
-    echo "Spec mode — spec will be created during the draft phase"
+    if [ "$MODE" = "research" ]; then
+        echo "Research mode — no spec required, using research_seed.md"
+    else
+        echo "Spec mode — spec will be created during the draft phase"
+    fi
 fi
 
 # Circuit breaker settings
@@ -125,6 +129,8 @@ elif [ "$MODE" = "review" ]; then
     SETUP_PROMPT_FILE="$(resolve_prompt review/setup.md)"
     PROMPT_FILE="$(resolve_prompt review/general.md)"
     MAX_ITERATIONS=${MAX_ITERATIONS:-10}
+    REVIEW_DEBATE_ENABLED=${REVIEW_DEBATE_ENABLED:-true}
+    REVIEW_DEBATE_ROUNDS=${REVIEW_DEBATE_ROUNDS:-3}
 elif [ "$MODE" = "review-fix" ]; then
     PROMPT_FILE="$(resolve_prompt review/fix.md)"
     MAX_ITERATIONS=${MAX_ITERATIONS:-5}
@@ -140,13 +146,20 @@ elif [ "$MODE" = "decompose" ]; then
     MAX_ITERATIONS=1
     VERBOSE=true
 elif [ "$MODE" = "spec" ]; then
-    # Spec mode: research → draft → refine → review → review-fix → signoff
+    # Spec mode: research → draft → refine → debate → review-fix → signoff
     MAX_ITERATIONS=${MAX_ITERATIONS:-8}
     SPEC_RESEARCH_ITERS=1
     SPEC_DRAFT_ITERS=1
     SPEC_REFINE_ITERS=${SPEC_REFINE_ITERS:-3}
     SPEC_REVIEW_ITERS=${SPEC_REVIEW_ITERS:-1}
     SPEC_REVIEWFIX_ITERS=${SPEC_REVIEWFIX_ITERS:-1}
+    SPEC_DEBATE_CHALLENGE=${SPEC_DEBATE_CHALLENGE:-true}
+elif [ "$MODE" = "research" ]; then
+    # Research mode: codebase → web → review → completion check cycles
+    MAX_ITERATIONS=${MAX_ITERATIONS:-3}
+    RESEARCH_CODEBASE_ITERS=1
+    RESEARCH_WEB_ITERS=1
+    RESEARCH_REVIEW_ITERS=1
 elif [ "$MODE" = "insights" ]; then
     # Insights mode: run analysis on existing iteration logs
     MAX_ITERATIONS=1
@@ -160,6 +173,8 @@ elif [ "$MODE" = "full" ]; then
     FULL_REVIEW_ITERS=${FULL_REVIEW_ITERS:-25}  # More iterations to cover all review items including antagonist
     FULL_REVIEWFIX_ITERS=${FULL_REVIEWFIX_ITERS:-5}  # Review-fix iterations per cycle
     FULL_DISTILL_ITERS=${FULL_DISTILL_ITERS:-1}  # Distill iterations per cycle
+    REVIEW_DEBATE_ENABLED=${REVIEW_DEBATE_ENABLED:-true}
+    REVIEW_DEBATE_ROUNDS=${REVIEW_DEBATE_ROUNDS:-3}
     RALPH_BUILD_GATE="${RALPH_BUILD_GATE:-}"  # Shell command that must pass before REVIEW
     RALPH_BUILD_GATE_RETRIES=${RALPH_BUILD_GATE_RETRIES:-3}  # Extra BUILD iterations if gate fails
 else
@@ -199,12 +214,19 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "Spec:    $SPEC_NAME"
 echo "Mode:    $MODE"
 if [ "$MODE" = "spec" ]; then
-    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → review($SPEC_REVIEW_ITERS) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    debate_iters=5
+    [ "$SPEC_DEBATE_CHALLENGE" = "true" ] && debate_iters=8
+    echo "Phases:  research($SPEC_RESEARCH_ITERS) → draft($SPEC_DRAFT_ITERS) → refine($SPEC_REFINE_ITERS) → debate($debate_iters) → fix($SPEC_REVIEWFIX_ITERS) → signoff"
+    echo "Debate:  challenge=$SPEC_DEBATE_CHALLENGE"
+elif [ "$MODE" = "research" ]; then
+    echo "Phases:  [codebase + web](parallel) → review($RESEARCH_REVIEW_ITERS) → completion"
+    echo "Cycles:  $MAX_ITERATIONS max"
 elif [ "$MODE" = "decompose" ]; then
     echo "Action:  Decompose spec into sub-specs"
 elif [ "$MODE" = "full" ]; then
-    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
+    echo "Cycle:   plan($FULL_PLAN_ITERS) → build($FULL_BUILD_ITERS) → review($FULL_REVIEW_ITERS) → debate → fix($FULL_REVIEWFIX_ITERS) → distill($FULL_DISTILL_ITERS) → check"
     [ $MAX_ITERATIONS -gt 0 ] && echo "Max:     $MAX_ITERATIONS cycles"
+    echo "Debate:  enabled=$REVIEW_DEBATE_ENABLED rounds=$REVIEW_DEBATE_ROUNDS"
 elif [ "$MODE" = "insights" ]; then
     echo "Action:  Analyze iteration logs"
 elif [ "$MODE" = "debug" ]; then
@@ -229,9 +251,28 @@ if [ "$MODE" = "spec" ]; then
             exit 1
         fi
     done
+    for pf in "$(resolve_prompt spec/debate/setup.md)" "$(resolve_prompt spec/debate/skeptic.md)" "$(resolve_prompt spec/debate/synthesize.md)"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for spec debate)"
+            exit 1
+        fi
+    done
     # Verify spec_seed.md exists
     if [ ! -f "./.ralph/spec_seed.md" ]; then
         echo "Error: .ralph/spec_seed.md not found. Run the spec wizard first (ralph spec <name>)"
+        exit 1
+    fi
+elif [ "$MODE" = "research" ]; then
+    # Research mode uses its own set of prompt files
+    for pf in "$(resolve_prompt research/codebase.md)" "$(resolve_prompt research/web.md)" "$(resolve_prompt research/review.md)" "$(resolve_prompt research/completion.md)"; do
+        if [ ! -f "$pf" ]; then
+            echo "Error: $pf not found (required for research mode)"
+            exit 1
+        fi
+    done
+    # Verify research_seed.md exists
+    if [ ! -f "./.ralph/research_seed.md" ]; then
+        echo "Error: .ralph/research_seed.md not found. Run the research wizard first (ralph research <name>)"
         exit 1
     fi
 elif [ "$MODE" = "insights" ]; then
@@ -258,6 +299,14 @@ elif [ "$MODE" = "full" ]; then
         done
     fi
     # Check for at least one review prompt (specialist or generic)
+    if [ "${REVIEW_DEBATE_ENABLED:-true}" = "true" ]; then
+        for pf in "$(resolve_prompt review/debate/setup.md)" "$(resolve_prompt review/debate/cross_examine.md)" "$(resolve_prompt review/debate/synthesize.md)"; do
+            if [ ! -f "$pf" ]; then
+                echo "Error: $pf not found (required for review debate)"
+                exit 1
+            fi
+        done
+    fi
     if [ ! -f "$(resolve_prompt review/qa.md)" ] && [ ! -f "$(resolve_prompt review/general.md)" ]; then
         echo "Error: No review prompt found (need review/qa.md or review/general.md)"
         exit 1
@@ -746,6 +795,17 @@ capture_iteration_summary() {
     # Extract the phase name from the display string (e.g. "BUILD (3/10)" -> "BUILD", "REVIEW-QA (5/25)" -> "REVIEW-QA")
     local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
 
+    # Extract debate metadata if this is a debate sub-phase
+    local debate_subphase=""
+    local debate_persona=""
+    case "$phase_display" in
+        DEBATE\ SETUP)       debate_subphase="SETUP" ;;
+        CRITIQUE\ \(*)       debate_subphase="CRITIQUE"; debate_persona=$(echo "$phase_display" | sed 's/CRITIQUE (\(.*\))/\1/') ;;
+        CHALLENGE\ \(*)      debate_subphase="CHALLENGE"; debate_persona=$(echo "$phase_display" | sed 's/CHALLENGE (\(.*\))/\1/') ;;
+        CROSS-EXAMINE\ \(*)  debate_subphase="CROSS-EXAMINE"; debate_persona=$(echo "$phase_display" | sed 's/.*: \(.*\))/\1/') ;;
+        DEBATE\ SYNTHESIZE)  debate_subphase="SYNTHESIZE" ;;
+    esac
+
     # Use git to get accurate metrics based on start SHA
     local files_changed=0
     local commits=0
@@ -816,7 +876,9 @@ capture_iteration_summary() {
   "recent_commits": "$recent_commits",
   "error_snippet": "$error_snippet",
   "start_sha": "$start_sha",
-  "branch": "$branch"
+  "branch": "$branch",
+  "debate_subphase": "$debate_subphase",
+  "debate_persona": "$debate_persona"
 }
 INSIGHTS_EOF
 }
@@ -1908,7 +1970,7 @@ run_master_completion_check() {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SPEC MODE - Creates specs: research → draft → refine → review → fix → signoff
+# SPEC MODE - Creates specs: research → draft → refine → debate → fix → signoff
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # Helper function to run spec signoff check
@@ -2000,6 +2062,225 @@ if [ "$MODE" = "insights" ]; then
     exit 0
 fi
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# RESEARCH MODE - Runs codebase → web → review → completion check cycles
+# ═══════════════════════════════════════════════════════════════════════════════
+if [ "$MODE" = "research" ]; then
+    TOTAL_ITERATIONS=0
+    RESEARCH_COMPLETE=false
+    CYCLE=0
+
+    echo ""
+    echo -e "\033[1;36m╔════════════════════════════════════════════════════════════╗\033[0m"
+    echo -e "\033[1;36m║              RESEARCH MODE                                 ║\033[0m"
+    echo -e "\033[1;36m╠════════════════════════════════════════════════════════════╣\033[0m"
+    echo -e "\033[1;36m║  [codebase + web] → review → completion check              ║\033[0m"
+    echo -e "\033[1;36m╚════════════════════════════════════════════════════════════╝\033[0m"
+    echo ""
+
+    while [ $CYCLE -lt $MAX_ITERATIONS ] && [ "$RESEARCH_COMPLETE" = false ]; do
+        CYCLE=$((CYCLE + 1))
+
+        echo ""
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+        echo -e "\033[1;36m  RESEARCH CYCLE $CYCLE / $MAX_ITERATIONS\033[0m"
+        echo -e "\033[1;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 1+2: CODEBASE ANALYSIS + WEB RESEARCH (parallel)
+        # ─────────────────────────────────────────────────────────────────────
+        echo ""
+        echo -e "\033[1;36m┌────────────────────────────────────────────────────────────┐\033[0m"
+        echo -e "\033[1;36m│  PARALLEL RESEARCH - Codebase + Web simultaneously         │\033[0m"
+        echo -e "\033[1;36m└────────────────────────────────────────────────────────────┘\033[0m"
+        echo ""
+
+        PARALLEL_RESEARCH_START=$(date +%s)
+
+        # Track iteration numbers for logging
+        CODEBASE_ITER_NUM=$((TOTAL_ITERATIONS + 1))
+        WEB_ITER_NUM=$((TOTAL_ITERATIONS + 2))
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 2))
+
+        CODEBASE_LOG="$TEMP_DIR/iteration_${CODEBASE_ITER_NUM}.log"
+        WEB_LOG="$TEMP_DIR/iteration_${WEB_ITER_NUM}.log"
+
+        CODEBASE_PROMPT="$(resolve_prompt research/codebase.md)"
+        WEB_PROMPT="$(resolve_prompt research/web.md)"
+
+        # Launch codebase analysis in background
+        echo -e "  \033[1;34m🚀 Launching: Codebase Analysis\033[0m"
+        cat "$CODEBASE_PROMPT" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$CODEBASE_LOG" 2>&1 &
+        CODEBASE_PID=$!
+
+        # Launch web research in background
+        echo -e "  \033[1;35m🚀 Launching: Web Research\033[0m"
+        cat "$WEB_PROMPT" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$WEB_LOG" 2>&1 &
+        WEB_PID=$!
+
+        echo ""
+        echo -e "  \033[1;36m⏳\033[0m Waiting for both research agents..."
+        echo ""
+
+        # Wait with live status display
+        RESEARCH_ALL_DONE=false
+        while ! $RESEARCH_ALL_DONE; do
+            RESEARCH_ALL_DONE=true
+            status_line="  "
+
+            if ps -p $CODEBASE_PID > /dev/null 2>&1; then
+                RESEARCH_ALL_DONE=false
+                status_line="${status_line}\033[1;34m⟳ Codebase\033[0m  "
+            else
+                status_line="${status_line}\033[1;32m✓ Codebase\033[0m  "
+            fi
+
+            if ps -p $WEB_PID > /dev/null 2>&1; then
+                RESEARCH_ALL_DONE=false
+                status_line="${status_line}\033[1;35m⟳ Web\033[0m  "
+            else
+                status_line="${status_line}\033[1;32m✓ Web\033[0m  "
+            fi
+
+            printf "\r${status_line}"
+            if ! $RESEARCH_ALL_DONE; then
+                sleep 2
+            fi
+        done
+        printf "\r                                                                              \r"
+
+        # Collect exit codes
+        wait $CODEBASE_PID
+        CODEBASE_EXIT=$?
+        wait $WEB_PID
+        WEB_EXIT=$?
+
+        PARALLEL_RESEARCH_END=$(date +%s)
+        PARALLEL_RESEARCH_DURATION=$((PARALLEL_RESEARCH_END - PARALLEL_RESEARCH_START))
+
+        if [ $CODEBASE_EXIT -eq 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m Codebase analysis completed successfully"
+            CONSECUTIVE_FAILURES=0
+        else
+            echo -e "  \033[1;31m✗\033[0m Codebase analysis failed (exit code $CODEBASE_EXIT)"
+            echo "    Log: $CODEBASE_LOG"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        if [ $WEB_EXIT -eq 0 ]; then
+            echo -e "  \033[1;32m✓\033[0m Web research completed successfully"
+            CONSECUTIVE_FAILURES=0
+        else
+            echo -e "  \033[1;31m✗\033[0m Web research failed (exit code $WEB_EXIT)"
+            echo "    Log: $WEB_LOG"
+            CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+        fi
+
+        echo ""
+        echo -e "  \033[1;36m⏱\033[0m  Parallel research took $(format_duration $PARALLEL_RESEARCH_DURATION)"
+
+        # Capture iteration logs for both
+        capture_iteration_summary "$CODEBASE_LOG" "$CODEBASE_ITER_NUM" "CODEBASE" "$CODEBASE_EXIT" "$PARALLEL_RESEARCH_START" ""
+        capture_iteration_summary "$WEB_LOG" "$WEB_ITER_NUM" "WEB" "$WEB_EXIT" "$PARALLEL_RESEARCH_START" ""
+        persist_iteration_log "$CODEBASE_LOG" "$CODEBASE_ITER_NUM" "CODEBASE" "$CODEBASE_EXIT" "$PARALLEL_RESEARCH_START" ""
+        persist_iteration_log "$WEB_LOG" "$WEB_ITER_NUM" "WEB" "$WEB_EXIT" "$PARALLEL_RESEARCH_START" ""
+
+        # Push any changes from both agents
+        git add -A 2>/dev/null || true
+        git commit -m "research: codebase + web analysis (parallel)" 2>/dev/null || true
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || git push -u origin "$CURRENT_BRANCH" 2>/dev/null || true
+
+        # Check circuit breaker if both failed
+        if [ $CODEBASE_EXIT -ne 0 ] && [ $WEB_EXIT -ne 0 ]; then
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 3: REVIEW
+        # ─────────────────────────────────────────────────────────────────────
+        print_phase_banner "RESEARCH REVIEW" $RESEARCH_REVIEW_ITERS
+
+        REVIEW_ITERATION=0
+        while [ $REVIEW_ITERATION -lt $RESEARCH_REVIEW_ITERS ]; do
+            REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+            if ! run_single_iteration "$(resolve_prompt research/review.md)" $TOTAL_ITERATIONS "REVIEW ($REVIEW_ITERATION/$RESEARCH_REVIEW_ITERS)"; then
+                echo -e "  \033[1;31m✗\033[0m Research review failed"
+                if check_circuit_breaker; then
+                    break
+                fi
+            fi
+        done
+
+        echo -e "  \033[1;32m✓\033[0m Research review complete"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # PHASE 4: COMPLETION CHECK
+        # ─────────────────────────────────────────────────────────────────────
+        echo ""
+        echo -e "  \033[1;35m── Completion Check ──\033[0m"
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+        COMPLETION_OUTPUT="$TEMP_DIR/research_completion_${CYCLE}.txt"
+        if run_single_iteration "$(resolve_prompt research/completion.md)" $TOTAL_ITERATIONS "COMPLETION CHECK"; then
+            # Check for completion JSON in the research output
+            # The completion prompt outputs JSON with "complete": true/false
+            LAST_OUTPUT="$TEMP_DIR/output_${TOTAL_ITERATIONS}.txt"
+            if [ -f "$LAST_OUTPUT" ]; then
+                if grep -q '"complete"[[:space:]]*:[[:space:]]*true' "$LAST_OUTPUT" 2>/dev/null; then
+                    RESEARCH_COMPLETE=true
+                    echo -e "  \033[1;32m✓\033[0m Research deemed complete"
+                else
+                    echo -e "  \033[1;33m⚠\033[0m Research needs more work — continuing to next cycle"
+                fi
+            else
+                echo -e "  \033[1;33m⚠\033[0m Could not read completion output — continuing to next cycle"
+            fi
+        else
+            echo -e "  \033[1;31m✗\033[0m Completion check failed"
+            if check_circuit_breaker; then
+                break
+            fi
+        fi
+    done
+
+    # Calculate final total elapsed time
+    FINAL_ELAPSED=$(($(date +%s) - LOOP_START_TIME))
+    FINAL_FORMATTED=$(format_duration $FINAL_ELAPSED)
+
+    # Clean up state file on completion
+    rm -f "$STATE_FILE"
+
+    echo ""
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    if [ "$RESEARCH_COMPLETE" = true ]; then
+        echo -e "\033[1;32m  Research complete in $CYCLE cycle(s), $TOTAL_ITERATIONS iteration(s)\033[0m"
+        echo -e "\033[1;32m  Output: .ralph/references/\033[0m"
+        echo -e "\033[1;32m  Next: ralph spec $SPEC_NAME (to create a spec from research)\033[0m"
+    else
+        echo -e "\033[1;33m  Research stopped after $CYCLE cycle(s) (max reached)\033[0m"
+        echo -e "\033[1;33m  Review .ralph/references/ and .ralph/research_gaps.md\033[0m"
+        echo -e "\033[1;33m  Run research mode again to continue\033[0m"
+    fi
+    echo -e "\033[1;32m  Total time: $FINAL_FORMATTED\033[0m"
+    echo -e "\033[1;32m  Errors: ${ERROR_COUNT:-0}\033[0m"
+    echo -e "\033[1;32m════════════════════════════════════════════════════════════\033[0m"
+    echo ""
+
+    exit 0
+fi
+
 if [ "$MODE" = "spec" ]; then
     TOTAL_ITERATIONS=0
     SPEC_READY=false
@@ -2008,7 +2289,7 @@ if [ "$MODE" = "spec" ]; then
     echo -e "\033[1;35m╔════════════════════════════════════════════════════════════╗\033[0m"
     echo -e "\033[1;35m║              SPEC CREATION MODE                            ║\033[0m"
     echo -e "\033[1;35m╠════════════════════════════════════════════════════════════╣\033[0m"
-    echo -e "\033[1;35m║  research → draft → refine → review → fix → signoff       ║\033[0m"
+    echo -e "\033[1;35m║  research → draft → refine → debate → fix → signoff       ║\033[0m"
     echo -e "\033[1;35m╚════════════════════════════════════════════════════════════╝\033[0m"
     echo ""
 
@@ -2107,24 +2388,113 @@ if [ "$MODE" = "spec" ]; then
     echo -e "  \033[1;32m✓\033[0m Refine phase complete ($REFINE_ITERATION iterations)"
 
     # ─────────────────────────────────────────────────────────────────────
-    # PHASE 3a: REVIEW
+    # PHASE 3a: DEBATE (replaces single-reviewer REVIEW)
     # ─────────────────────────────────────────────────────────────────────
-    print_phase_banner "SPEC REVIEW" $SPEC_REVIEW_ITERS
+    DEBATE_DIR="./.ralph/spec_debate"
+    DEBATE_CHALLENGE_ENABLED="${SPEC_DEBATE_CHALLENGE:-true}"
 
-    REVIEW_ITERATION=0
-    while [ $REVIEW_ITERATION -lt $SPEC_REVIEW_ITERS ]; do
-        REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
+    debate_display_total=5
+    [ "$DEBATE_CHALLENGE_ENABLED" = "true" ] && debate_display_total=8
+
+    print_phase_banner "SPEC DEBATE" $debate_display_total
+
+    # Clean up previous debate state
+    rm -rf "$DEBATE_DIR"
+    mkdir -p "$DEBATE_DIR"
+
+    echo -e "  \033[1;34mℹ\033[0m  Challenge round: $DEBATE_CHALLENGE_ENABLED"
+
+    # ── SUB-PHASE: SETUP (moderator selects personas) ──
+    echo ""
+    echo -e "  \033[1;35m── Debate Setup ──\033[0m"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "$(resolve_prompt spec/debate/setup.md)" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+        echo -e "  \033[1;31m✗\033[0m Debate setup failed"
+        check_circuit_breaker
+    fi
+
+    # Parse selected personas from debate_plan.md
+    DEBATE_PERSONAS_LINE=""
+    if [ -f "$DEBATE_DIR/debate_plan.md" ]; then
+        DEBATE_PERSONAS_LINE=$(grep '^## PERSONAS=' "$DEBATE_DIR/debate_plan.md" 2>/dev/null | sed 's/^## PERSONAS=//')
+    fi
+
+    if [ -z "$DEBATE_PERSONAS_LINE" ]; then
+        echo -e "  \033[1;31m✗\033[0m Could not parse personas from debate_plan.md — falling back to skeptic,architect,qa"
+        DEBATE_PERSONAS_LINE="skeptic,architect,qa"
+    fi
+
+    IFS=',' read -ra DEBATE_PERSONAS <<< "$DEBATE_PERSONAS_LINE"
+    echo -e "  \033[1;32m✓\033[0m Debate setup complete — personas: ${DEBATE_PERSONAS[*]}"
+
+    # ── SUB-PHASE: CRITIQUE (each persona independently) ──
+    echo ""
+    echo -e "  \033[1;35m── Independent Critiques ──\033[0m"
+
+    for persona in "${DEBATE_PERSONAS[@]}"; do
+        persona_prompt="$(resolve_prompt spec/debate/${persona}.md)"
+        if [ ! -f "$persona_prompt" ]; then
+            echo -e "  \033[1;33m⚠️\033[0m  No prompt file for persona '$persona' — skipping"
+            continue
+        fi
+
         TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        echo -e "  \033[1;34mℹ\033[0m  Running critique: $persona"
 
-        if ! run_single_iteration "$(resolve_prompt spec/review.md)" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
-            echo -e "  \033[1;31m✗\033[0m Review phase failed"
+        if ! run_single_iteration "$persona_prompt" $TOTAL_ITERATIONS "CRITIQUE ($persona)"; then
+            echo -e "  \033[1;31m✗\033[0m $persona critique failed"
             if check_circuit_breaker; then
                 break
             fi
         fi
     done
 
-    echo -e "  \033[1;32m✓\033[0m Review phase complete"
+    echo -e "  \033[1;32m✓\033[0m All critiques complete"
+
+    # ── SUB-PHASE: CHALLENGE (cross-examination, optional) ──
+    if [ "$DEBATE_CHALLENGE_ENABLED" = "true" ]; then
+        echo ""
+        echo -e "  \033[1;35m── Cross-Examination ──\033[0m"
+
+        for persona in "${DEBATE_PERSONAS[@]}"; do
+            persona_prompt="$(resolve_prompt spec/debate/${persona}.md)"
+            if [ ! -f "$persona_prompt" ]; then
+                continue
+            fi
+
+            if [ ! -f "$DEBATE_DIR/${persona}_critique.md" ]; then
+                echo -e "  \033[1;33m⚠️\033[0m  No critique from '$persona' — skipping challenge"
+                continue
+            fi
+
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            echo -e "  \033[1;34mℹ\033[0m  Running challenge: $persona"
+
+            if ! run_single_iteration "$persona_prompt" $TOTAL_ITERATIONS "CHALLENGE ($persona)"; then
+                echo -e "  \033[1;31m✗\033[0m $persona challenge failed"
+                if check_circuit_breaker; then
+                    break
+                fi
+            fi
+        done
+
+        echo -e "  \033[1;32m✓\033[0m Cross-examination complete"
+    else
+        echo -e "  \033[1;34mℹ\033[0m  Challenge round disabled — skipping"
+    fi
+
+    # ── SUB-PHASE: SYNTHESIZE (moderator produces spec_review.md) ──
+    echo ""
+    echo -e "  \033[1;35m── Synthesis ──\033[0m"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "$(resolve_prompt spec/debate/synthesize.md)" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE"; then
+        echo -e "  \033[1;31m✗\033[0m Synthesis failed"
+        check_circuit_breaker
+    fi
+
+    echo -e "  \033[1;32m✓\033[0m Debate phase complete — spec_review.md produced"
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE 3b: REVIEW-FIX (conditional)
@@ -2747,6 +3117,102 @@ USERREVIEWEOF
         run_insights_analysis "review"
 
         # ─────────────────────────────────────────────────────────────────────
+        # REVIEW DEBATE PHASE (Socratic cross-examination of review findings)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ "${REVIEW_DEBATE_ENABLED:-true}" = "true" ]; then
+            REVIEW_DEBATE_DIR="./.ralph/review_debate"
+            REVIEW_FILE_FOR_DEBATE="./.ralph/review.md"
+
+            REVIEW_DEBATE_FINDINGS=0
+            if [ -f "$REVIEW_FILE_FOR_DEBATE" ]; then
+                REVIEW_DEBATE_FINDINGS=$(grep -c '❌\|⚠️\|💡' "$REVIEW_FILE_FOR_DEBATE" 2>/dev/null) || REVIEW_DEBATE_FINDINGS=0
+            fi
+
+            if [ "$REVIEW_DEBATE_FINDINGS" -gt 0 ]; then
+                debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
+                debate_display_total=$((2 + debate_max_rounds))
+
+                print_phase_banner "REVIEW DEBATE" $debate_display_total
+
+                # Clean up previous debate state
+                rm -rf "$REVIEW_DEBATE_DIR"
+                mkdir -p "$REVIEW_DEBATE_DIR"
+
+                echo -e "  \033[1;34mℹ\033[0m  Review has $REVIEW_DEBATE_FINDINGS findings — planning cross-examination"
+                echo -e "  \033[1;34mℹ\033[0m  Max pairing rounds: $debate_max_rounds"
+
+                # ── SETUP ──
+                echo ""
+                echo -e "  \033[1;35m── Debate Setup ──\033[0m"
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                if ! run_single_iteration "$(resolve_prompt review/debate/setup.md)" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+                    echo -e "  \033[1;31m✗\033[0m Debate setup failed"
+                    check_circuit_breaker
+                fi
+
+                # Parse pairings
+                REVIEW_DEBATE_PAIRINGS_LINE=""
+                if [ -f "$REVIEW_DEBATE_DIR/debate_plan.md" ]; then
+                    REVIEW_DEBATE_PAIRINGS_LINE=$(grep '^## PAIRINGS=' "$REVIEW_DEBATE_DIR/debate_plan.md" 2>/dev/null | sed 's/^## PAIRINGS=//')
+                fi
+
+                if [ -z "$REVIEW_DEBATE_PAIRINGS_LINE" ]; then
+                    echo -e "  \033[1;31m✗\033[0m Could not parse pairings — falling back to security:api,qa:antagonist,db:perf"
+                    REVIEW_DEBATE_PAIRINGS_LINE="security:api,qa:antagonist,db:perf"
+                fi
+
+                IFS=',' read -ra RD_PAIRINGS <<< "$REVIEW_DEBATE_PAIRINGS_LINE"
+                rd_num_pairings=${#RD_PAIRINGS[@]}
+                if [ "$rd_num_pairings" -gt "$debate_max_rounds" ]; then
+                    rd_num_pairings=$debate_max_rounds
+                fi
+
+                echo -e "  \033[1;32m✓\033[0m Debate setup complete — $rd_num_pairings pairing rounds planned"
+
+                # ── CROSS-EXAMINATION ROUNDS ──
+                echo ""
+                echo -e "  \033[1;35m── Cross-Examination ──\033[0m"
+
+                rd_round=0
+                while [ "$rd_round" -lt "$rd_num_pairings" ]; do
+                    rd_round=$((rd_round + 1))
+                    rd_pairing="${RD_PAIRINGS[$((rd_round - 1))]}"
+                    rd_spec_a="${rd_pairing%%:*}"
+                    rd_spec_b="${rd_pairing##*:}"
+
+                    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+                    echo -e "  \033[1;34mℹ\033[0m  Round $rd_round/$rd_num_pairings: $rd_spec_a vs $rd_spec_b"
+
+                    if ! run_single_iteration "$(resolve_prompt review/debate/cross_examine.md)" $TOTAL_ITERATIONS "CROSS-EXAMINE (round $rd_round: $rd_spec_a vs $rd_spec_b)"; then
+                        echo -e "  \033[1;31m✗\033[0m Cross-examination round $rd_round failed"
+                        if check_circuit_breaker; then
+                            break
+                        fi
+                    fi
+                done
+
+                echo -e "  \033[1;32m✓\033[0m Cross-examination complete ($rd_num_pairings rounds)"
+
+                # ── SYNTHESIZE ──
+                echo ""
+                echo -e "  \033[1;35m── Synthesis ──\033[0m"
+                TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+                if ! run_single_iteration "$(resolve_prompt review/debate/synthesize.md)" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE"; then
+                    echo -e "  \033[1;31m✗\033[0m Synthesis failed"
+                    check_circuit_breaker
+                fi
+
+                echo -e "  \033[1;32m✓\033[0m Review debate complete — review.md updated"
+            else
+                echo -e "  \033[1;32m✓\033[0m No review findings to debate — skipping"
+            fi
+        else
+            echo -e "  \033[1;34mℹ\033[0m  Review debate disabled — skipping"
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
         # REVIEW-FIX PHASE
         # ─────────────────────────────────────────────────────────────────────
 
@@ -3160,6 +3626,68 @@ while true; do
     # Update checkpoint
     save_state "$MODE" "$ITERATION" "Completed"
 done
+
+# Post-loop review debate (standalone review mode only)
+if [ "$MODE" = "review" ] && [ "${REVIEW_DEBATE_ENABLED:-false}" = "true" ]; then
+    TOTAL_ITERATIONS=$ITERATION
+
+    REVIEW_DEBATE_DIR="./.ralph/review_debate"
+    REVIEW_FILE_FOR_DEBATE="./.ralph/review.md"
+    REVIEW_DEBATE_FINDINGS=0
+    if [ -f "$REVIEW_FILE_FOR_DEBATE" ]; then
+        REVIEW_DEBATE_FINDINGS=$(grep -c '❌\|⚠️\|💡' "$REVIEW_FILE_FOR_DEBATE" 2>/dev/null) || REVIEW_DEBATE_FINDINGS=0
+    fi
+
+    if [ "$REVIEW_DEBATE_FINDINGS" -gt 0 ]; then
+        debate_max_rounds=${REVIEW_DEBATE_ROUNDS:-3}
+        debate_display_total=$((2 + debate_max_rounds))
+
+        print_phase_banner "REVIEW DEBATE" $debate_display_total
+
+        rm -rf "$REVIEW_DEBATE_DIR"
+        mkdir -p "$REVIEW_DEBATE_DIR"
+
+        echo -e "  \033[1;34mℹ\033[0m  Review has $REVIEW_DEBATE_FINDINGS findings — planning cross-examination"
+
+        # SETUP
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        if ! run_single_iteration "$(resolve_prompt review/debate/setup.md)" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+            echo -e "  \033[1;31m✗\033[0m Debate setup failed"
+        fi
+
+        # Parse pairings
+        RD_PAIRINGS_LINE=""
+        if [ -f "$REVIEW_DEBATE_DIR/debate_plan.md" ]; then
+            RD_PAIRINGS_LINE=$(grep '^## PAIRINGS=' "$REVIEW_DEBATE_DIR/debate_plan.md" 2>/dev/null | sed 's/^## PAIRINGS=//')
+        fi
+        [ -z "$RD_PAIRINGS_LINE" ] && RD_PAIRINGS_LINE="security:api,qa:antagonist,db:perf"
+
+        IFS=',' read -ra RD_PAIRINGS <<< "$RD_PAIRINGS_LINE"
+        rd_num=${#RD_PAIRINGS[@]}
+        [ "$rd_num" -gt "$debate_max_rounds" ] && rd_num=$debate_max_rounds
+
+        # CROSS-EXAMINE
+        rd_i=0
+        while [ "$rd_i" -lt "$rd_num" ]; do
+            rd_i=$((rd_i + 1))
+            rd_pair="${RD_PAIRINGS[$((rd_i - 1))]}"
+            rd_a="${rd_pair%%:*}"
+            rd_b="${rd_pair##*:}"
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            echo -e "  \033[1;34mℹ\033[0m  Round $rd_i/$rd_num: $rd_a vs $rd_b"
+            run_single_iteration "$(resolve_prompt review/debate/cross_examine.md)" $TOTAL_ITERATIONS "CROSS-EXAMINE (round $rd_i: $rd_a vs $rd_b)" || true
+        done
+
+        # SYNTHESIZE
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        run_single_iteration "$(resolve_prompt review/debate/synthesize.md)" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE" || true
+
+        echo -e "  \033[1;32m✓\033[0m Review debate complete"
+
+        stage_ralph_memory
+        git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+    fi
+fi
 
 # Run insights analysis at end of standard mode
 run_insights_analysis "$MODE"

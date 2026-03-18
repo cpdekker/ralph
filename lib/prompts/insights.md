@@ -7,9 +7,17 @@ Focus on the loop's efficiency, failure modes, and process improvements. The imp
 ## Instructions
 
 1. Read all JSON files in `.ralph/insights/iteration_logs/` — these are structured summaries of each iteration
-2. Read `.ralph/insights/insights.md` if it exists — preserve the History section (keep only the last 5 entries)
-3. Read `.ralph/specs/active.md` and `.ralph/implementation_plan.md` only for context — do NOT reproduce their status tracking
-4. Read `.ralph/AGENTS.md` — check if it has a test strategy section. If not, and you detect test-related waste, your Project-Specific recommendations should include a concrete AGENTS.md snippet the user can add
+2. Also check `.ralph/logs/` for iteration logs (the modular version stores them here)
+3. Read `.ralph/insights/insights.md` if it exists — preserve the History section (keep only the last 5 entries)
+4. Read `.ralph/specs/active.md` and `.ralph/implementation_plan.md` only for context — do NOT reproduce their status tracking
+5. Read `.ralph/AGENTS.md` — check if it has a test strategy section. If not, and you detect test-related waste, your Project-Specific recommendations should include a concrete AGENTS.md snippet the user can add
+6. If debate iterations are present in the logs, also read:
+   - `.ralph/spec_debate/debate_plan.md` — to assess persona selection quality (spec debates)
+   - `.ralph/spec_review.md` — to count post-debate issues and check "Raised by" attributions
+   - All `*_critique.md` and `*_challenge.md` files in `.ralph/spec_debate/` — to assess contribution depth
+   - `.ralph/review_debate/debate_plan.md` — to assess pairing selection quality (code review debates)
+   - `.ralph/review.md` "Debate Summary" section — to count escalations, downgrades, new findings
+   - All `round*_*.md` files in `.ralph/review_debate/` — to assess cross-examination depth
 
 ## Iteration Log Schema
 
@@ -29,8 +37,10 @@ Each JSON log contains:
 - `recent_commits` — Last 3 commit messages
 - `error_snippet` — Error text if the iteration failed
 - `start_sha` — Git SHA at iteration start (for diffing)
+- `debate_subphase` — (debate iterations only) One of: SETUP, CRITIQUE, CHALLENGE, CROSS-EXAMINE, SYNTHESIZE. Empty for non-debate iterations. CRITIQUE/CHALLENGE are used in spec debates; CROSS-EXAMINE is used in code review debates.
+- `debate_persona` — (debate iterations only) The persona ID (e.g. "skeptic", "architect", "security") or pairing description (e.g. "security vs api"). Empty for SETUP/SYNTHESIZE and non-debate iterations.
 
-Note: Older logs may lack `phase_name`, `start_sha`, and token/cost fields. For those, extract the phase from the `phase` display string (the text before the first space or parenthesis). Treat missing token/cost fields as 0.
+Note: Older logs may lack `phase_name`, `start_sha`, token/cost, and debate fields. For those, extract the phase from the `phase` display string (the text before the first space or parenthesis). Treat missing token/cost fields as 0. Treat missing debate fields as empty.
 
 ## Analysis Categories
 
@@ -59,7 +69,55 @@ This is the most valuable analysis. Evaluate whether phase transitions were time
 - Did REVIEW find issues that could have been caught with automated tooling during BUILD?
 - Were phase iteration counts (e.g. FULL_PLAN_ITERS=5) well-calibrated?
 
-### 5. Process Improvement Opportunities
+### 5. Debate Effectiveness
+
+If iteration logs contain debate sub-phases (non-empty `debate_subphase`), analyze the Socratic debate. There are two debate contexts — apply the relevant analysis:
+
+#### Spec Debate (CRITIQUE + CHALLENGE sub-phases)
+
+**Persona Contribution Balance**
+- Compare duration and token usage across personas in the CRITIQUE sub-phase
+- Flag if any persona took disproportionately long (>2x the average) — may indicate prompt bloat or scope mismatch
+- Flag if any persona was very fast with few file changes — may indicate shallow analysis
+
+**Challenge Round Value**
+- Compare CRITIQUE-only cost/duration vs CHALLENGE cost/duration. Was the challenge round worth the extra ~3 iterations?
+- Read `.ralph/spec_review.md` if it exists — check the "Raised by" annotations to see if challenge-round findings appear
+- If challenge rounds consistently add no new findings, recommend disabling via `SPEC_DEBATE_CHALLENGE=false`
+
+**Persona Selection Quality**
+- Read `.ralph/spec_debate/debate_plan.md` if it exists — were the selected personas appropriate for the spec content?
+- Check if any persona's critique was largely "What's Actually Good" / "What Serves Users Well" with few real concerns — may indicate wrong persona for this spec
+
+#### Code Review Debate (CROSS-EXAMINE sub-phases)
+
+**Pairing Effectiveness**
+- Compare duration and token usage across cross-examination rounds
+- Flag pairings that took disproportionately long or short — may indicate mismatch or shallow analysis
+- Read `.ralph/review_debate/debate_plan.md` to check if the planned pairings were appropriate
+
+**Cross-Examination Value**
+- Read `.ralph/review.md` "Debate Summary" section if it exists — count escalations, downgrades, new findings
+- If cross-examination consistently adds no new findings or severity changes, recommend reducing `REVIEW_DEBATE_ROUNDS` or disabling via `REVIEW_DEBATE_ENABLED=false`
+- Read `round*_*.md` files in `.ralph/review_debate/` to assess cross-examination depth
+
+**Pairing Diversity**
+- Did the setup select diverse pairings covering different specialist combinations?
+- Were the same specialists over-represented across rounds?
+- Recommend specific pairing adjustments based on which rounds were most productive
+
+#### Common to Both Debate Types
+
+**Debate vs Review-Fix Cascade**
+- After debate, how many BLOCKING/ATTENTION issues did review-fix need to address?
+- Compare this to the total findings from the debate — are the debate findings actionable or mostly noise?
+- High noise ratio (many debate findings but few review-fix actions) suggests prompts need tightening
+
+**Cost Efficiency**
+- Total debate cost (all debate sub-phases) vs what a single review iteration would cost
+- If debate consistently costs >4x a single review with similar outcomes, flag for evaluation
+
+### 6. Process Improvement Opportunities
 - Could iteration counts be adjusted for specific phases?
 - Are there phases that could be consolidated or skipped?
 - Would quality gates during BUILD reduce REVIEW burden?
@@ -98,6 +156,31 @@ Write or update `.ralph/insights/insights.md`. **Keep the total output under 150
 | Total cost | $N.NN (avg $N.NN/iter) |
 | Cost by phase | PLAN: $N.NN, BUILD: $N.NN, REVIEW: $N.NN, REVIEW-FIX: $N.NN |
 | Total tokens | Nk input, Nk output |
+
+## Debate Effectiveness
+
+{Only include this section if debate iterations are present in the logs. Otherwise omit entirely.}
+
+| Metric | Value |
+|--------|-------|
+| Personas selected | [list] |
+| Debate total cost | $N.NN (SETUP: $N.NN, CRITIQUE: $N.NN, CHALLENGE: $N.NN, SYNTHESIZE: $N.NN) |
+| Debate total duration | Xs (N min) |
+| Challenge round cost | $N.NN ({N%} of debate total) |
+| Persona balance | [e.g. "skeptic: 45s/$0.12, architect: 38s/$0.10, qa: 52s/$0.14"] |
+| Post-debate blocking issues | N |
+| Post-debate attention issues | N |
+| Challenge/cross-exam added findings | [yes/no/unknown — check debate artifacts for new findings not in original reviews] |
+
+### Debate Assessment
+{1-2 sentences: Was the debate worth the cost? Were the pairings/personas productive? Was cross-examination valuable?}
+
+### Debate Recommendations
+{Only if there are actionable improvements. Examples:}
+{- "Disable challenge round (SPEC_DEBATE_CHALLENGE=false) — added $X.XX cost with no new findings"}
+{- "Reduce REVIEW_DEBATE_ROUNDS from 3 to 2 — round 3 added no value"}
+{- "Pairing security:api was most productive — consider always including it"}
+{- "Persona X contributed little to this spec type — consider adjusting selection logic in setup.md"}
 
 ## Waste Indicators
 

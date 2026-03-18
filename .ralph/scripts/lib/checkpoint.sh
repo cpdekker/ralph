@@ -160,6 +160,17 @@ persist_iteration_log() {
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     local phase_name=$(echo "$phase_display" | sed 's/ (.*//' | tr '[:lower:]' '[:upper:]')
 
+    # Extract debate metadata if this is a debate sub-phase
+    local debate_subphase=""
+    local debate_persona=""
+    case "$phase_display" in
+        DEBATE\ SETUP)       debate_subphase="SETUP" ;;
+        CRITIQUE\ \(*)       debate_subphase="CRITIQUE"; debate_persona=$(echo "$phase_display" | sed 's/CRITIQUE (\(.*\))/\1/') ;;
+        CHALLENGE\ \(*)      debate_subphase="CHALLENGE"; debate_persona=$(echo "$phase_display" | sed 's/CHALLENGE (\(.*\))/\1/') ;;
+        CROSS-EXAMINE\ \(*)  debate_subphase="CROSS-EXAMINE"; debate_persona=$(echo "$phase_display" | sed 's/.*: \(.*\))/\1/') ;;
+        DEBATE\ SYNTHESIZE)  debate_subphase="SYNTHESIZE" ;;
+    esac
+
     # Git-based metrics
     local files_changed=0
     local commits=0
@@ -202,7 +213,9 @@ persist_iteration_log() {
   "git_commits": $commits,
   "input_tokens": $input_tokens,
   "output_tokens": $output_tokens,
-  "cost_usd": $cost_usd
+  "cost_usd": $cost_usd,
+  "debate_subphase": "$debate_subphase",
+  "debate_persona": "$debate_persona"
 }
 EOF
     # Stage for git

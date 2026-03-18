@@ -2,7 +2,127 @@
 # Ralph Wiggum - Spec Mode Execution
 # Sourced by loop.sh — do not run directly.
 #
-# Spec mode flow: research → draft → refine → review → fix → signoff
+# Spec mode flow: research → draft → refine → debate → fix → signoff
+
+# Run the Socratic multi-agent debate phase.
+# Sub-phases: SETUP → CRITIQUE (per persona) → CHALLENGE (per persona, optional) → SYNTHESIZE
+# Produces .ralph/spec_review.md in the same format as the old single-reviewer REVIEW.
+run_debate_phase() {
+    local debate_dir="./.ralph/spec_debate"
+    local challenge_enabled="${SPEC_DEBATE_CHALLENGE:-true}"
+
+    # Calculate total iterations for display
+    local debate_total=5  # setup(1) + critique(3) + synthesize(1)
+    if [ "$challenge_enabled" = "true" ]; then
+        debate_total=8  # + challenge(3)
+    fi
+
+    print_phase_banner "SPEC DEBATE" $debate_total
+
+    # Clean up previous debate state
+    rm -rf "$debate_dir"
+    mkdir -p "$debate_dir"
+
+    echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Challenge round: $challenge_enabled"
+
+    # ── SUB-PHASE: SETUP (moderator selects personas) ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Debate Setup ──${C_RESET}"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "./.ralph/prompts/spec/debate/setup.md" $TOTAL_ITERATIONS "DEBATE SETUP"; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Debate setup failed"
+        if check_circuit_breaker; then
+            return
+        fi
+    fi
+
+    # Parse selected personas from debate_plan.md
+    local personas_line=""
+    if [ -f "$debate_dir/debate_plan.md" ]; then
+        personas_line=$(grep '^## PERSONAS=' "$debate_dir/debate_plan.md" 2>/dev/null | sed 's/^## PERSONAS=//')
+    fi
+
+    if [ -z "$personas_line" ]; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Could not parse personas from debate_plan.md — falling back to skeptic,architect,qa"
+        personas_line="skeptic,architect,qa"
+    fi
+
+    # Split into array
+    IFS=',' read -ra DEBATE_PERSONAS <<< "$personas_line"
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Debate setup complete — personas: ${DEBATE_PERSONAS[*]}"
+
+    # ── SUB-PHASE: CRITIQUE (each persona independently) ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Independent Critiques ──${C_RESET}"
+
+    for persona in "${DEBATE_PERSONAS[@]}"; do
+        local prompt_file="./.ralph/prompts/spec/debate/${persona}.md"
+        if [ ! -f "$prompt_file" ]; then
+            echo -e "  ${C_WARNING}⚠️${C_RESET}  No prompt file for persona '$persona' — skipping"
+            continue
+        fi
+
+        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Running critique: $persona"
+
+        if ! run_single_iteration "$prompt_file" $TOTAL_ITERATIONS "CRITIQUE ($persona)"; then
+            echo -e "  ${C_ERROR}✗${C_RESET} $persona critique failed"
+            if check_circuit_breaker; then
+                return
+            fi
+        fi
+    done
+
+    echo -e "  ${C_SUCCESS}✓${C_RESET} All critiques complete"
+
+    # ── SUB-PHASE: CHALLENGE (cross-examination, optional) ──
+    if [ "$challenge_enabled" = "true" ]; then
+        echo ""
+        echo -e "  ${C_ACCENT}── Cross-Examination ──${C_RESET}"
+
+        for persona in "${DEBATE_PERSONAS[@]}"; do
+            local prompt_file="./.ralph/prompts/spec/debate/${persona}.md"
+            if [ ! -f "$prompt_file" ]; then
+                continue
+            fi
+
+            # Only run challenge if the persona produced a critique
+            if [ ! -f "$debate_dir/${persona}_critique.md" ]; then
+                echo -e "  ${C_WARNING}⚠️${C_RESET}  No critique from '$persona' — skipping challenge"
+                continue
+            fi
+
+            TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+            echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Running challenge: $persona"
+
+            if ! run_single_iteration "$prompt_file" $TOTAL_ITERATIONS "CHALLENGE ($persona)"; then
+                echo -e "  ${C_ERROR}✗${C_RESET} $persona challenge failed"
+                if check_circuit_breaker; then
+                    return
+                fi
+            fi
+        done
+
+        echo -e "  ${C_SUCCESS}✓${C_RESET} Cross-examination complete"
+    else
+        echo -e "  ${C_PRIMARY}ℹ${C_RESET}  Challenge round disabled — skipping"
+    fi
+
+    # ── SUB-PHASE: SYNTHESIZE (moderator produces spec_review.md) ──
+    echo ""
+    echo -e "  ${C_ACCENT}── Synthesis ──${C_RESET}"
+    TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
+
+    if ! run_single_iteration "./.ralph/prompts/spec/debate/synthesize.md" $TOTAL_ITERATIONS "DEBATE SYNTHESIZE"; then
+        echo -e "  ${C_ERROR}✗${C_RESET} Synthesis failed"
+        if check_circuit_breaker; then
+            return
+        fi
+    fi
+
+    echo -e "  ${C_SUCCESS}✓${C_RESET} Debate phase complete — spec_review.md produced"
+}
 
 run_spec_mode() {
     TOTAL_ITERATIONS=0
@@ -12,7 +132,7 @@ run_spec_mode() {
     echo -e "${C_ACCENT}╔════════════════════════════════════════════════════════════╗${C_RESET}"
     echo -e "${C_ACCENT}║              SPEC CREATION MODE                            ║${C_RESET}"
     echo -e "${C_ACCENT}╠════════════════════════════════════════════════════════════╣${C_RESET}"
-    echo -e "${C_ACCENT}║  research → draft → refine → review → fix → signoff       ║${C_RESET}"
+    echo -e "${C_ACCENT}║  research → draft → refine → debate → fix → signoff       ║${C_RESET}"
     echo -e "${C_ACCENT}╚════════════════════════════════════════════════════════════╝${C_RESET}"
     echo ""
 
@@ -111,24 +231,9 @@ run_spec_mode() {
     echo -e "  ${C_SUCCESS}✓${C_RESET} Refine phase complete ($REFINE_ITERATION iterations)"
 
     # ─────────────────────────────────────────────────────────────────────
-    # PHASE: REVIEW
+    # PHASE: DEBATE (replaces single-reviewer REVIEW)
     # ─────────────────────────────────────────────────────────────────────
-    print_phase_banner "SPEC REVIEW" $SPEC_REVIEW_ITERS
-
-    REVIEW_ITERATION=0
-    while [ $REVIEW_ITERATION -lt $SPEC_REVIEW_ITERS ]; do
-        REVIEW_ITERATION=$((REVIEW_ITERATION + 1))
-        TOTAL_ITERATIONS=$((TOTAL_ITERATIONS + 1))
-
-        if ! run_single_iteration "./.ralph/prompts/spec/review.md" $TOTAL_ITERATIONS "SPEC REVIEW ($REVIEW_ITERATION/$SPEC_REVIEW_ITERS)"; then
-            echo -e "  ${C_ERROR}✗${C_RESET} Review phase failed"
-            if check_circuit_breaker; then
-                break
-            fi
-        fi
-    done
-
-    echo -e "  ${C_SUCCESS}✓${C_RESET} Review phase complete"
+    run_debate_phase
 
     # ─────────────────────────────────────────────────────────────────────
     # PHASE: REVIEW-FIX (conditional)
