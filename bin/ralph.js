@@ -177,6 +177,43 @@ program
     await run(spec, opts);
   });
 
+// ralph status [spec]
+program
+  .command('status [spec]')
+  .description('Show status of a running Ralph container')
+  .action(async (spec) => {
+    const { run } = require('../lib/commands/status');
+    await run(spec);
+  });
+
+// ralph steer <message>
+program
+  .command('steer <message...>')
+  .description('Send a directive to a running Ralph (picked up next iteration)')
+  .option('-s, --spec <spec>', 'target a specific spec')
+  .action(async (messageParts, opts) => {
+    const { run } = require('../lib/commands/steer');
+    await run(messageParts.join(' '), opts.spec);
+  });
+
+// ralph pause [spec]
+program
+  .command('pause [spec]')
+  .description('Pause Ralph after current iteration')
+  .action(async (spec) => {
+    const { run } = require('../lib/commands/pause');
+    await run(spec, 'pause');
+  });
+
+// ralph resume [spec]
+program
+  .command('resume [spec]')
+  .description('Resume a paused Ralph')
+  .action(async (spec) => {
+    const { run } = require('../lib/commands/pause');
+    await run(spec, 'resume');
+  });
+
 // ralph run (interactive mode)
 program
   .command('run')

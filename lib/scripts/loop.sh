@@ -447,6 +447,115 @@ EOF
     git push origin "$CURRENT_BRANCH" 2>/dev/null || true
 }
 
+# Check for user directives in the mailbox between iterations
+check_mailbox() {
+    local mailbox=".ralph/mailbox.md"
+
+    # Skip if no mailbox or empty
+    if [ ! -s "$mailbox" ]; then
+        return 0
+    fi
+
+    echo -e "\033[1;35m📬 Processing mailbox directive...\033[0m"
+    echo ""
+
+    local mailbox_content
+    mailbox_content=$(cat "$mailbox")
+
+    # Build context for the prompt
+    local plan_content=""
+    if [ -f ".ralph/implementation_plan.md" ]; then
+        plan_content=$(cat ".ralph/implementation_plan.md")
+    fi
+
+    local spec_content=""
+    if [ -f ".ralph/specs/active.md" ]; then
+        spec_content=$(cat ".ralph/specs/active.md")
+    fi
+
+    local mailbox_prompt="$TEMP_DIR/mailbox_prompt.md"
+    cat > "$mailbox_prompt" <<MAILBOX_EOF
+# Mailbox Directive from Human Operator
+
+You have received a directive/question from the human operator. Read it carefully and take appropriate action.
+
+## Current Context
+- **Spec**: ${SPEC_NAME:-unknown}
+- **Mode/Phase**: ${MODE:-unknown}
+- **Iteration**: ${ITERATION:-0}
+- **Branch**: ${CURRENT_BRANCH:-unknown}
+
+## Human Directive
+${mailbox_content}
+
+## Current Implementation Plan
+${plan_content:-No implementation plan found.}
+
+## Current Spec
+${spec_content:-No active spec found.}
+
+## Instructions
+1. Read the human's directive or question carefully
+2. Take appropriate action — this may include:
+   - Modifying the implementation plan
+   - Answering a question
+   - Adjusting approach or priorities
+   - Updating the spec
+   - Making code changes
+3. Write your response/summary to \`.ralph/mailbox-reply.md\` explaining what you did and any answers to questions
+4. Be concise but thorough in your reply
+MAILBOX_EOF
+
+    # Run Claude with the mailbox prompt
+    local mailbox_log="$TEMP_DIR/mailbox.log"
+
+    if [ "$VERBOSE" = true ]; then
+        cat "$mailbox_prompt" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose 2>&1 | tee "$mailbox_log"
+    else
+        cat "$mailbox_prompt" | claude -p \
+            --dangerously-skip-permissions \
+            --output-format=stream-json \
+            --verbose > "$mailbox_log" 2>&1
+    fi
+
+    # Archive the processed mailbox
+    local timestamp
+    timestamp=$(date -u +"%Y%m%d-%H%M%S")
+    mv "$mailbox" ".ralph/mailbox-processed-${timestamp}.md"
+
+    # Commit the reply and archived mailbox
+    git add .ralph/mailbox-reply.md .ralph/mailbox-processed-*.md 2>/dev/null
+    git commit -m "ralph: processed mailbox directive" 2>/dev/null
+    git push origin "$CURRENT_BRANCH" 2>/dev/null || true
+
+    echo -e "\033[1;35m📬 Mailbox directive processed. Reply written to .ralph/mailbox-reply.md\033[0m"
+    echo ""
+
+    return 0
+}
+
+# Check if user has requested a pause
+check_pause() {
+    if [ ! -f ".ralph/pause" ]; then
+        return 0
+    fi
+
+    echo -e "\033[1;33m⏸ Ralph paused by user. Waiting for resume...\033[0m"
+    echo -e "\033[1;33m  Remove .ralph/pause to continue.\033[0m"
+
+    while [ -f ".ralph/pause" ]; do
+        sleep 5
+    done
+
+    echo -e "\033[1;32m▶ Resuming...\033[0m"
+    echo ""
+
+    return 0
+}
+
 # Initialize session
 SESSION_START=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 TOTAL_ITERATIONS=0
@@ -1232,6 +1341,10 @@ run_single_iteration() {
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
+
+    # Check for user directives between iterations
+    check_mailbox
+    check_pause
 
     # Update checkpoint after successful iteration
     save_state "$phase_name" "$iteration_num" "Completed successfully"
@@ -3622,7 +3735,11 @@ while true; do
         echo "Failed to push. Creating remote branch..."
         git push -u origin "$CURRENT_BRANCH"
     }
-    
+
+    # Check for user directives between iterations
+    check_mailbox
+    check_pause
+
     # Update checkpoint
     save_state "$MODE" "$ITERATION" "Completed"
 done
