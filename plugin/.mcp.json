@@ -1,0 +1,7 @@
+{
+  "ralph": {
+    "command": "node",
+    "args": ["mcp/server.js"],
+    "cwd": "${CLAUDE_PLUGIN_ROOT}"
+  }
+}

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PLUGIN_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+if [ ! -d ".ralph" ]; then
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": ""\n  }\n}\n'
+  exit 0
+fi
+
+context_parts=()
+
+running=$(docker ps --filter "label=ralph.repo" --format '{{.Names}} {{.Label "ralph.spec"}} {{.Label "ralph.mode"}}' 2>/dev/null || true)
+if [ -n "$running" ]; then
+  while IFS= read -r line; do
+    name=$(echo "$line" | awk '{print $1}')
+    spec=$(echo "$line" | awk '{print $2}')
+    mode=$(echo "$line" | awk '{print $3}')
+    context_parts+=("Ralph is running: \`${spec}\` in \`${mode}\` mode (container: ${name}).")
+  done <<< "$running"
+fi
+
+stopped=$(docker ps -a --filter "label=ralph.repo" --filter "status=exited" --format '{{.Names}} {{.Label "ralph.spec"}} {{.Label "ralph.mode"}}' 2>/dev/null || true)
+if [ -n "$stopped" ]; then
+  while IFS= read -r line; do
+    name=$(echo "$line" | awk '{print $1}')
+    spec=$(echo "$line" | awk '{print $2}')
+    mode=$(echo "$line" | awk '{print $3}')
+    context_parts+=("Ralph finished \`${spec}\` (\`${mode}\` mode) — results ready to pull (container: ${name}).")
+  done <<< "$stopped"
+fi
+
+if [ ${#context_parts[@]} -gt 0 ]; then
+  context="Ralph containers detected:\\n"
+  for part in "${context_parts[@]}"; do
+    context+="- ${part}\\n"
+  done
+  context+="\\nUse ralph_status for details, ralph_logs for output, or ralph_result to pull artifacts."
+else
+  context=""
+fi
+
+escape_for_json() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//$'\t'/\\t}"
+    printf '%s' "$s"
+}
+
+escaped=$(escape_for_json "$context")
+
+if [ -n "${CURSOR_PLUGIN_ROOT:-}" ]; then
+  printf '{\n  "additional_context": "%s"\n}\n' "$escaped"
+elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+  printf '{\n  "hookSpecificOutput": {\n    "hookEventName": "SessionStart",\n    "additionalContext": "%s"\n  }\n}\n' "$escaped"
+else
+  printf '{\n  "additional_context": "%s"\n}\n' "$escaped"
+fi
+
+exit 0
