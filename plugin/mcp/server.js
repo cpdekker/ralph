@@ -3,8 +3,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
 import * as setupTool from './tools/setup.js';
+import * as startTool from './tools/start.js';
+import * as statusTool from './tools/status.js';
+import * as logsTool from './tools/logs.js';
+import * as steerTool from './tools/steer.js';
+import * as controlTool from './tools/control.js';
+import * as resultTool from './tools/result.js';
 
-const tools = [setupTool];
+const tools = [setupTool, startTool, statusTool, logsTool, steerTool, controlTool, resultTool];
 const toolMap = new Map(tools.map(t => [t.definition.name, t]));
 
 const server = new Server(
