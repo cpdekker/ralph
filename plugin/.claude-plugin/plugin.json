@@ -1,0 +1,12 @@
+{
+  "name": "ralph",
+  "description": "Ralph Wiggum — spin up Docker containers for autonomous coding tasks (build, research, spec, review) from within Claude Code",
+  "version": "0.1.0",
+  "author": {
+    "name": "Chris Dekker"
+  },
+  "homepage": "https://github.com/cpdekker/ralph",
+  "repository": "https://github.com/cpdekker/ralph",
+  "license": "MIT",
+  "keywords": ["ralph", "docker", "autonomous", "build", "research", "review", "spec"]
+}
