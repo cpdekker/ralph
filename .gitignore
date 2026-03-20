@@ -37,6 +37,9 @@ Thumbs.db
 node_modules/
 npm-debug.log*
 
+# Plugin runtime state
+.ralph/plugin-state.json
+
 # OS files
 .DS_Store
 .DS_Store?
